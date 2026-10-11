@@ -25,6 +25,8 @@ let pictureProfileId = null;
 let bookmarkEditSignature = '';
 
 function renderBasics(state) {
+  $('restore-bar').hidden = IS_OVERLAY || !state.restoreOffer;
+  if (state.restoreOffer) $('restore-text').textContent = `Restore ${state.restoreOffer === 1 ? 'your tab' : `your ${state.restoreOffer} tabs`} from last time?`;
   $('update-restart').hidden = !state.updateReady;
   if (state.updateReady) $('update-restart').textContent = `Restart to update to ${state.updateReady}`;
   $('menu-toggle').classList.toggle('update-ready', !!state.updateReady);
@@ -626,6 +628,8 @@ document.addEventListener('keydown', (event) => {
 });
 window.miniBrowser.onState(render);
 $('update-restart').addEventListener('click', () => window.miniBrowser.installUpdate());
+$('restore-tabs').addEventListener('click', () => window.miniBrowser.restoreTabs());
+$('restore-dismiss').addEventListener('click', () => window.miniBrowser.dismissRestore());
 window.miniBrowser.onFocusAddress(focusAddress);
 window.miniBrowser.onFocusFind(() => {
   focusFindPending = true;

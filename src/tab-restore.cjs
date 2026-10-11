@@ -21,6 +21,8 @@ class TabRestore {
       urls.push(tab.url);
       states.push({ pinned: !!tab.pinned, muted: tab.content.isAudioMuted() });
     }
+    // Start pages alone are not a session: keep the last real one on offer.
+    if (!urls.length) return;
     const file = this.file(id), temporary = file + '.tmp';
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });

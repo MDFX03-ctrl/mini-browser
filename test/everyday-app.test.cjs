@@ -138,6 +138,7 @@ async function run() {
     await application.close(); application = null; await launch();
     assert.equal((await state()).activeProfile.id, otherProfile);
     await call('switchProfile', defaultProfile); shell = await profileWindow(defaultProfile);
+    await call('restoreTabs'); await poll(async () => !(await state()).restoreOffer && (await state()).tabs[0].url, 'saved tabs restored');
     await call('ui', 'history'); await poll(async () => (await state()).overlay === 'history', 'history publishes'); assert.ok((await state()).history.some(entry => entry.url === base + '/alpha'));
     await call('ui', 'passwords'); await poll(async () => (await state()).overlay === 'passwords', 'passwords publish'); assert.equal((await state()).passwords.length, 1);
     assert.equal((await state()).tabs[0].pinned, true); assert.equal((await state()).tabs[0].muted, true);

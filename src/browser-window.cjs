@@ -7,8 +7,9 @@ const { BrowserTabs } = require('./tabs.cjs');
 const { loginOrigin } = require('./passwords.cjs');
 
 async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSession, hidden,
-  bounds, dataDirectory, data, passwords, quit, isBusy, openProfiles, publishAll, access, icons, downloads, restore, onClosing, onCreated, onClosed, onFocused, onChanged, updateReady = () => null, installUpdate = () => {}, empty = false }) {
+  bounds, dataDirectory, data, passwords, quit, isBusy, openProfiles, publishAll, access, icons, downloads, restore, onClosing, onCreated, onClosed, onFocused, onChanged, updateReady = () => null, installUpdate = () => {}, keepOnClose = () => false, empty = false }) {
   const SHELL_URL = 'mini://app/index.html';
+  let restoreOffer = null;
   const chromeHeight = () => 88 + (data.preferences.bookmarkBar && bookmarks.list().length ? 32 : 0);
   let window;
   let tabs;
@@ -95,7 +96,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       history: overlay === 'history' ? data.entries.slice(0, 500) : [],
       passwords: overlay === 'passwords' ? passwords.list() : [], passwordOffer: tab.passwordOffer || [],
       passwordPrompt: tab.passwordPrompt ? { origin: tab.passwordPrompt.origin, username: tab.passwordPrompt.username } : null,
-      canReopen: data.closed.length > 0, updateReady: updateReady(),
+      canReopen: data.closed.length > 0, updateReady: updateReady(), restoreOffer: restoreOffer?.urls.length || 0,
       ...access.state(controller), panelHeight: pushOpen() ? panelHeight : 0
     };
     layout();
@@ -249,6 +250,8 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       case 'close': window.close(); return state;
       case 'exit': quit(); return state;
       case 'install-update': installUpdate(); return state;
+      case 'restore-tabs': restoreTabs().catch(error => { tab.notice = error.message; publish(); }); break;
+      case 'dismiss-restore': restoreOffer = null; break;
       case 'print': if (tab.mode === 'page') content.print({ silent: false }, (success, reason) => { if (!success && reason && !/cancel/i.test(reason)) { tab.notice = reason; publish(); } }); break;
       default: throw new Error('Unknown browser action.');
     }
@@ -347,6 +350,19 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     if (handled) event.preventDefault();
   }
 
+  async function restoreTabs() {
+    const offer = restoreOffer;
+    if (!offer) return;
+    restoreOffer = null;
+    const untouched = tabs.items.filter(tab => tab.mode === 'welcome');
+    const restored = offer.urls.map(url => tabs.create(url, false));
+    restored.forEach((tab, index) => { tab.pinned = offer.states?.[index]?.pinned === true; tab.content.setAudioMuted(offer.states?.[index]?.muted === true); });
+    sortTabs();
+    tabs.select(restored[offer.active]?.id || restored[0].id);
+    tabsBusy = true;
+    try { for (const tab of untouched) if (tabs.items.includes(tab) && tab.mode === 'welcome') await tabs.close(tab.id); }
+    finally { tabsBusy = false; publish(); onChanged?.(); }
+  }
   function sortTabs() {
     tabs.items.sort((a, b) => Number(b.pinned) - Number(a.pinned));
     for (const tab of tabs.items) window.contentView.addChildView(tab.view);
@@ -469,7 +485,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     showAccess() { if (overlay === 'profiles') overlay = null; sitePanelOpen = false; exitVideo(); revealChrome(); },
     accessPanel(open) { sitePanelOpen = open === true && !!access.state(controller).siteOrigin; if (overlay === 'profiles') overlay = null; revealChrome(); return { ok: true }; },
     hold(hold) { chromeHeld = hold === true; if (chromeHeld) revealChrome(); return { ok: true }; },
-    async close() { access.cancelWindow(controller); exitVideo(); await tabs.destroy(); if (!window.isDestroyed()) window.close(); }
+    async close() { closing = true; access.cancelWindow(controller); exitVideo(); await tabs.destroy(); if (!window.isDestroyed()) window.close(); }
   };
   window = new BrowserWindow({
     width: 480, height: 640, minWidth: 360, minHeight: 280, ...bounds,
@@ -505,12 +521,9 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       access.cancelWindow(controller); sitePanelOpen = false; exitVideo();
     } });
   if (!empty) {
-    if (restore?.urls.length) {
-      const restored = restore.urls.map(url => tabs.create(url, false));
-      restored.forEach((tab, index) => { tab.pinned = restore.states?.[index]?.pinned === true; tab.content.setAudioMuted(restore.states?.[index]?.muted === true); });
-      sortTabs();
-      tabs.select(restored[restore.active]?.id || restored[0].id);
-    } else tabs.create();
+    // A new window starts on the start page; the previous tabs are offered, not reloaded.
+    restoreOffer = restore?.urls.length ? restore : null;
+    tabs.create();
     tabs.active.notice = [bookmarks.error, data.notice, passwords.notice].filter(Boolean).join(' ');
   }
   onCreated(controller);
@@ -529,7 +542,21 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     exitVideo();
     syncChrome();
   });
-  window.on('close', () => {
+  // Windows logoff and shutdown must close the window for real.
+  let closing = false;
+  window.on('query-session-end', () => { closing = true; });
+  window.on('close', (event) => {
+    if (!closing && tabs.items.length && keepOnClose(controller)) {
+      // Hidden, not closed: pages keep running (audio keeps playing) and reappear without reloading.
+      event.preventDefault();
+      onClosing(controller);
+      if (!hidden) {
+        try { fs.writeFileSync(path.join(dataDirectory, 'window.json'), JSON.stringify(window.getNormalBounds())); }
+        catch (error) { console.error('Could not save window position:', error.message); }
+      }
+      window.hide();
+      return;
+    }
     onClosing(controller);
     access.cancelWindow(controller);
     if (!hidden) {

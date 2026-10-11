@@ -180,11 +180,15 @@ async function run() {
     assert.deepEqual(JSON.parse(fs.readFileSync(workFile)).urls, [base + '/work', base + '/work-two']);
     await launch();
     assert.equal((await state()).activeProfile.id, workId);
-    await poll(async () => !(await state()).loading, 'restored active page');
+    // A new launch starts on the start page and offers the saved tabs.
+    assert.equal((await state()).restoreOffer, 2); assert.deepEqual((await state()).tabs.map(tab => tab.url), ['']);
+    await call('restoreTabs');
+    await poll(async () => (await state()).tabs.length === 2 && !(await state()).loading, 'restored active page');
     assert.deepEqual((await state()).tabs.map(tab => tab.url), [base + '/work', base + '/work-two']);
     assert.equal((await state()).url, base + '/work');
     await call('switchProfile', 'default'); shell = await profileWindow('default');
-    await poll(async () => !(await state()).loading, 'default restored active page');
+    await call('restoreTabs');
+    await poll(async () => (await state()).tabs.length === 3 && !(await state()).loading, 'default restored active page');
     assert.deepEqual((await state()).tabs.map(tab => tab.url), [base + '/first', base + '/same-origin', base + '/linked']);
     assert.equal((await state()).url, base + '/same-origin');
     // A manual close also writes the tab snapshot before disposing the views.

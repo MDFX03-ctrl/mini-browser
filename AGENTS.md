@@ -6,7 +6,7 @@ Installed copies (1.8.0 and later) update themselves from the GitHub Releases of
 
 1. Make the change. For an engine update, move `devDependencies.electron` to the newest supported version and check the Electron release notes for breaking changes.
 2. Raise `version` in `package.json` and the two top-level `"version"` entries of `package-lock.json` (not dependency versions). Update the installer file name in `README.md`.
-3. Run `npm test`, then the app suites that touch the change, at least `npm run test:profiles` and `npm run test:windows`. Before an engine update, run every `test:*` suite.
+3. Run `npm test`. App suites test a staged copy, so first stage the current code with `npm run build:installer -- --stage-only` (no signing needed), then run the app suites that touch the change, at least `npm run test:profiles` and `npm run test:windows`. Before an engine update, run every `test:*` suite.
 4. Commit on `main`. Commits must use the private address `306214390+MDFX03-ctrl@users.noreply.github.com` (already set in this repository's git config). Never commit a thumbprint, certificate or `.pfx`.
 
 ## 2. Build

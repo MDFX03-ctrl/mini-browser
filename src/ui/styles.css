@@ -112,3 +112,5 @@ main { height:calc(100vh - var(--chrome-height));overflow:auto; } .welcome { min
 @media(prefers-reduced-motion:reduce) { .loading { animation:none;width:100%; } }
 #update-restart { font-weight:600;color:#1f6b43; } #menu-toggle.update-ready { position:relative; }
 #menu-toggle.update-ready::after { content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#2f8f5b; }
+.welcome { position:relative; } .restore-bar { position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;max-width:calc(100% - 32px);background:#fcfdf9;border:1px solid #dce5d4;border-radius:10px;box-shadow:0 3px 10px #203c3226;padding:8px 8px 8px 16px;font-size:13px;color:#29463a; }
+.restore-bar[hidden] { display:none; } .restore-bar span { flex:1 1 auto; }

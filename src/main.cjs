@@ -168,6 +168,8 @@ async function createWindow(id, origin, point, empty = false) {
     browsingSession: browsingSessionFor(id), hidden, dataDirectory, bounds: windowBounds(origin, point), empty,
     isBusy: () => profilesBusy, openProfiles, publishAll, access, icons, downloads,
     updateReady: () => updater?.ready || null, installUpdate: () => updater?.install(),
+    // The last visible window hides to the tray instead of closing; others close as before.
+    keepOnClose: (item) => !quitting && (!hidden || process.env.MINI_BROWSER_TEST_KEEP_ON_CLOSE === '1') && ![...windows.values()].some(other => other !== item && !other.window.isDestroyed() && other.window.isVisible()),
     restore: !empty && !openProfiles().includes(id) ? restoredTabs.read(id) : null,
     onChanged: saveTabs,
     onClosing: (item) => {

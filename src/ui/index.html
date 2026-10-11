@@ -51,7 +51,7 @@
  </div>
 </div>
 <main>
- <section id="welcome" class="welcome"><div class="welcome-inner">
+ <section id="welcome" class="welcome"><div id="restore-bar" class="restore-bar" role="status" hidden><span id="restore-text">Restore your tabs from last time?</span><button id="restore-tabs" class="primary-button">Restore</button><button id="restore-dismiss" class="icon-button" title="Dismiss" aria-label="Dismiss">✕</button></div><div class="welcome-inner">
   <form id="start-form" class="start-search" role="search"><svg><use href="#search-icon"/></svg><input id="start-address" aria-label="Search bookmarks and history or enter address" placeholder="Enter address or search history" autocomplete="off" spellcheck="false" maxlength="8192"><button class="icon-button" title="Open address" aria-label="Open address"><svg><use href="#arrow-right"/></svg></button></form>
   <section class="bookmarks-section" aria-label="Bookmark shortcuts"><p id="bookmarks-empty" hidden></p><div id="bookmarks-list" class="bookmarks-list"></div><button id="add-bookmark" class="shortcut-add" aria-label="Add website"><span>+</span><span>Add shortcut</span></button></section>
   <form id="bookmark-form" class="bookmark-form" hidden><label for="bookmark-url">Website address</label><input id="bookmark-url" placeholder="https://example.com" required maxlength="8192" autocomplete="off" spellcheck="false"><label for="bookmark-name">Name (optional)</label><input id="bookmark-name" maxlength="120" autocomplete="off"><p id="bookmark-error" role="alert" hidden></p><div class="profile-actions"><button type="submit" class="primary-button">Save bookmark</button><button id="cancel-bookmark" type="button" class="text-button">Cancel</button></div></form>
