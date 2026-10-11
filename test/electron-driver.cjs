@@ -1,9 +1,11 @@
 'use strict';
+require('../scripts/test-runtime.cjs');
 // Main-process inspector only: a browser debugger can suspend service workers
 // in Electron partitions outside its default browser context.
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const fs = require('node:fs');
+const path = require('node:path');
 
 async function waitUntil(check, label, timeout = 20000) {
   const start = Date.now();
@@ -15,6 +17,7 @@ async function waitUntil(check, label, timeout = 20000) {
 }
 
 async function launch({ executablePath, cwd, env, args = [] }) {
+  if (fs.existsSync(path.join(path.dirname(executablePath), 'resources', 'installed.flag'))) throw new Error('Runtime tests require a project-local portable copy without installed.flag.');
   // This is a visible GUI test, not a console helper. SW_HIDE in the startup
   // flags can suppress Electron's first show() and stall fullscreen rendering.
   // Another desktop window covering this GUI test must not suspend Chromium's
@@ -60,7 +63,7 @@ async function launch({ executablePath, cwd, env, args = [] }) {
     });
   }
   async function evaluate(callback, value) {
-    const expression = `(${callback.toString()})(process.mainModule.require('electron'), ${JSON.stringify(value) ?? 'undefined'})`;
+    const expression = `process.mainModule ? (${callback.toString()})(process.mainModule.require('electron'), ${JSON.stringify(value) ?? 'undefined'}) : undefined`;
     const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result.value;
@@ -80,11 +83,14 @@ async function launch({ executablePath, cwd, env, args = [] }) {
         fs.writeFileSync(path, Buffer.from(png, 'base64'));
       },
       locator: (selector) => ({
-        click: () => shellEvaluate((selector) => {
+        click: async () => {
+          await waitUntil(() => shellEvaluate(selector => { const element = document.querySelector(selector); return !!element && !element.disabled && !element.closest('[hidden]'); }, selector), `Control visible: ${selector}`);
+          return shellEvaluate((selector) => {
           const element = document.querySelector(selector);
           if (!element || element.disabled || element.closest('[hidden]')) throw new Error(`Control unavailable: ${selector}`);
           element.click();
-        }, selector),
+        }, selector);
+        },
         fill: (value) => shellEvaluate(({ selector, value }) => {
           const element = document.querySelector(selector);
           if (!element) throw new Error(`Input missing: ${selector}`);
@@ -100,8 +106,8 @@ async function launch({ executablePath, cwd, env, args = [] }) {
     };
     return shell;
   }
-  await waitUntil(() => evaluate(({ app, BrowserWindow }) => app.isReady() && BrowserWindow.getAllWindows().length === 1), 'app ready');
-  const initialId = await evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);
+  await waitUntil(() => evaluate(({ app, BrowserWindow }) => app.isReady() && BrowserWindow.getAllWindows().some(win => win.webContents.getURL() === 'mini://app/index.html')), 'app ready');
+  const initialId = await evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(win => win.webContents.getURL() === 'mini://app/index.html').id);
   return {
     evaluate, window: windowShell, firstWindow: async () => windowShell(initialId), process: () => child,
     close: async () => {

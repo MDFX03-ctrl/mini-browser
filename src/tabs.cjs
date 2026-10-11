@@ -3,8 +3,10 @@ const { WebContentsView } = require('electron');
 const { isWebUrl } = require('./navigation.cjs');
 const { pageMenu } = require('./page-menu.cjs');
 const { configurePageContents } = require('./page-compatibility.cjs');
+const { recentlyActivated } = require('./download-policy.cjs');
 const path = require('node:path');
 let nextId = 0;
+const allowedSubframeUrl = url => ['about:blank', 'about:srcdoc'].includes(url) || /^(?:blob|data):/i.test(url);
 
 class BrowserTabs {
   constructor({ window, session, testing, changed, keyboard, fullscreen, beforeSwitch, favicon, visited, closedTab, titleChanged }) {
@@ -188,8 +190,10 @@ class BrowserTabs {
     });
     const listen = (name, callback) => content.on(name, (...args) => { if (live()) callback(...args); });
     const notice = (message) => { tab.notice = message; tab.owner.changed(); };
+    // Choosing a page menu item is a user action, however long the menu stayed open.
+    const activated = () => { tab.lastUserActivation = Date.now(); };
     listen('context-menu', (_event, params) => {
-      pageMenu(content, params, url => { if (live()) tab.owner.create(url); }).popup({ window: tab.owner.window });
+      pageMenu(content, params, url => { if (live()) tab.owner.create(url); }, activated).popup({ window: tab.owner.window });
     });
     listen('found-in-page', (_event, result) => {
       if (!tab.find.open || result.requestId !== tab.find.requestId) return;
@@ -204,8 +208,9 @@ class BrowserTabs {
       tab.owner.favicon(tab, urls);
     });
     listen('audio-state-changed', () => tab.owner.changed());
-    const openWindow = ({ url, disposition, features = '' }) => {
+    const openWindow = ({ url, disposition, features = '', referrer }) => {
       if (!live()) return { action: 'deny' };
+      if (!recentlyActivated(tab)) { notice('Pop-up blocked.'); return { action: 'deny' }; }
       if (!isWebUrl(url)) { notice('Only http and https websites can be opened.'); return { action: 'deny' }; }
       if (disposition === 'new-window' || /(?:^|,)\s*(?:width|height)\s*(?:=|,|$)/i.test(features)) {
         const size = (key, fallback, minimum, maximum) => {
@@ -231,18 +236,36 @@ class BrowserTabs {
       parent.once('closed', close);
       popup.once('closed', () => parent.removeListener('closed', close));
       const page = popup.webContents;
+      page.miniBrowserOwnerTab = tab;
       configurePageContents(page);
       // Native window.open can retain Electron's fallback UA despite its session.
       page.setUserAgent(content.session.getUserAgent());
       page.setWindowOpenHandler(openWindow);
+      page.on('before-input-event', (_event, input) => {
+        if (input.type === 'mouseDown' || input.type === 'keyDown' || input.type === 'touchStart') tab.lastUserActivation = Date.now();
+      });
+      let popupOrigin = '';
+      const updatePopupTitle = () => {
+        let origin = '';
+        try { origin = new URL(page.getURL()).origin; } catch {}
+        if (origin === 'null') origin = '';
+        if (origin) popupOrigin = origin;
+        const host = popupOrigin;
+        const title = page.getTitle();
+        popup.setTitle(`${host || 'New window'}${title ? ` — ${title}` : ''}`);
+      };
+      page.on('page-title-updated', (event) => { event.preventDefault(); updatePopupTitle(); });
+      page.on('did-navigate', updatePopupTitle);
+      page.on('did-navigate-in-page', updatePopupTitle);
+      page.on('did-start-navigation', (_event, url, _sameDocument, mainFrame) => { if (mainFrame) { try { popupOrigin = new URL(url).origin; } catch {} updatePopupTitle(); } });
       page.on('context-menu', (_event, params) => {
-        if (live()) pageMenu(page, params, url => tab.owner.create(url)).popup({ window: popup });
+        if (live()) pageMenu(page, params, url => tab.owner.create(url), activated).popup({ window: popup });
       });
       page.on('did-create-window', createdPopup);
       page.on('will-attach-webview', event => event.preventDefault());
       for (const name of ['will-navigate', 'will-redirect', 'will-frame-navigate']) {
         page.on(name, event => {
-          if (!event.isMainFrame && ['about:blank', 'about:srcdoc'].includes(event.url)) return;
+          if (!event.isMainFrame && allowedSubframeUrl(event.url)) return;
           if (!isWebUrl(event.url)) { event.preventDefault(); if (live()) notice('Only http and https websites can be opened.'); }
         });
       }
@@ -251,17 +274,19 @@ class BrowserTabs {
     listen('did-create-window', createdPopup);
     for (const name of ['will-navigate', 'will-redirect', 'will-frame-navigate']) {
       listen(name, (event) => {
-        if (!event.isMainFrame && ['about:blank', 'about:srcdoc'].includes(event.url)) return;
+        if (!event.isMainFrame && allowedSubframeUrl(event.url)) return;
         if (!isWebUrl(event.url)) { event.preventDefault(); notice('Only http and https websites can be opened.'); }
       });
     }
     listen('content-bounds-updated', (event) => event.preventDefault());
     listen('will-attach-webview', (event) => event.preventDefault());
-    listen('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
+    listen('did-start-navigation', (event, url, _inPlace, mainFrame) => {
       if (!mainFrame || !isWebUrl(url)) return;
       if (!_inPlace) { tab.favicons = []; tab.icon = ''; tab.iconAddresses = [url]; tab.passwordPrompt = null; }
       if (tab.owner.active === tab) tab.owner.beforeSwitch(true);
-      Object.assign(tab, { lastAddress: url, url, mode: 'page', error: '', notice: '' });
+      tab.lastAddress = url;
+      if (event?.isRendererInitiated !== true && !event?.initiator) tab.url = url;
+      Object.assign(tab, { mode: 'page', error: '', notice: '' });
       tab.owner.changed();
     });
     listen('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => {
@@ -288,9 +313,10 @@ class BrowserTabs {
     });
     listen('render-process-gone', () => tab.owner.fail(tab, tab.lastAddress, 'The page stopped responding. Try loading it again.'));
     listen('before-input-event', (event, input) => {
+      if (input.type === 'mouseDown' || input.type === 'keyDown' || input.type === 'touchStart') tab.lastUserActivation = Date.now();
       if (tab.owner.active === tab) tab.owner.keyboard(event, input);
     });
-    listen('enter-html-full-screen', () => tab.owner.fullscreen(tab, true));
+    listen('enter-html-full-screen', () => { notice('Press Esc to exit full screen.'); tab.owner.fullscreen(tab, true); });
     listen('leave-html-full-screen', () => tab.owner.fullscreen(tab, false));
   }
 }

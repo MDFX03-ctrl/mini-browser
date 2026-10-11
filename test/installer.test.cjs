@@ -61,7 +61,7 @@ async function verify() {
   const archive = path.join(application, 'resources', 'app.asar');
   for (const relativeFile of [
     ['src', 'main.cjs'], ['src', 'browser-window.cjs'], ['src', 'ordering.cjs'], ['src', 'tabs.cjs'], ['src', 'navigation.cjs'], ['src', 'bookmarks.cjs'], ['src', 'profiles.cjs'],
-    ['src', 'bookmark-icons.cjs'], ['src', 'icon-decoder.cjs'], ['src', 'page-compatibility.cjs'], ['src', 'permissions.cjs'], ['src', 'downloads.cjs'], ['src', 'page-menu.cjs'], ['src', 'tab-restore.cjs'], ['src', 'profile-data.cjs'], ['src', 'passwords.cjs'], ['src', 'page-preload.cjs'], ['src', 'preload.cjs'], ['src', 'ui', 'renderer.js'], ['src', 'ui', 'index.html'], ['src', 'ui', 'styles.css']
+    ['src', 'bookmark-icons.cjs'], ['src', 'icon-decoder.cjs'], ['src', 'page-compatibility.cjs'], ['src', 'permissions.cjs'], ['src', 'downloads.cjs'], ['src', 'download-policy.cjs'], ['src', 'page-menu.cjs'], ['src', 'tab-restore.cjs'], ['src', 'profile-data.cjs'], ['src', 'passwords.cjs'], ['src', 'page-preload.cjs'], ['src', 'preload.cjs'], ['src', 'ui', 'renderer.js'], ['src', 'ui', 'index.html'], ['src', 'ui', 'styles.css']
   ]) {
     const file = path.join(...relativeFile);
     assert.deepEqual(extractFile(archive, file), fs.readFileSync(path.join(root, file)));

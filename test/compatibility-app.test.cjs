@@ -7,7 +7,7 @@ const http = require('node:http');
 const { execFileSync } = require('node:child_process');
 const { randomUUID, createHash } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(executablePath.startsWith(root + path.sep));
 const temp = path.join(root, '.cache', 'tmp'); fs.mkdirSync(temp, { recursive:true });
 const env = { ...process.env, MINI_BROWSER_TEST:'1', MINI_BROWSER_TEST_PROFILE:randomUUID(), TEMP:temp, TMP:temp };
@@ -86,7 +86,7 @@ async function run() {
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
  try {
   application=await electron.launch({executablePath,cwd:root,env,args:['--use-fake-device-for-media-stream']});shell=await application.firstWindow();await shell.waitForURL('mini://app/index.html');
-  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.show();win.focus();});
+  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0];win.show();win.focus();});
   await shell.evaluate(url=>window.miniBrowser.navigate(url),base+'/');
   await poll(async()=>{const s=await state();return s.mode==='page'&&!s.loading&&s.url===base+'/';},'fixture');
   await hit('#switch'); await hit('#sidebar-toggle'); await hit('#composer');await hit('#send');await hit('#frame');
@@ -144,7 +144,7 @@ async function run() {
   console.log('PASS: input policy survives reload and leaves shell dragging, layout and sandbox unchanged');
   await remote("window.open('/popup','compatibility','width=420,height=520');void 0");
   let popupId;
-  await poll(async()=>{popupId=await application.evaluate(({BrowserWindow},id)=>BrowserWindow.getAllWindows().find(win=>win.getParentWindow()?.id===id&&!win.webContents.isLoading())?.id,shell.id);return !!popupId;},'popup');
+  await poll(async()=>{popupId=await application.evaluate(({BrowserWindow},id)=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').find(win=>win.getParentWindow()?.id===id&&!win.webContents.isLoading())?.id,shell.id);return !!popupId;},'popup');
   await hit('#switch',1,popupId);
   assert.equal(await application.evaluate(async({BrowserWindow},{parent,popup})=>{const child=BrowserWindow.fromId(popup),owner=BrowserWindow.fromId(parent);return child.webContents.session===owner.contentView.children.find(view=>!view.browserChrome).webContents.session;},{parent:shell.id,popup:popupId}),true);
   await application.evaluate(({BrowserWindow},id)=>BrowserWindow.fromId(id).destroy(),popupId);

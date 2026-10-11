@@ -7,7 +7,7 @@ const { BrowserTabs } = require('./tabs.cjs');
 const { loginOrigin } = require('./passwords.cjs');
 
 async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSession, hidden,
-  bounds, dataDirectory, data, passwords, quit, isBusy, openProfiles, publishAll, access, icons, downloads, restore, onClosing, onCreated, onClosed, onFocused, empty = false }) {
+  bounds, dataDirectory, data, passwords, quit, isBusy, openProfiles, publishAll, access, icons, downloads, restore, onClosing, onCreated, onClosed, onFocused, onChanged, empty = false }) {
   const SHELL_URL = 'mini://app/index.html';
   const chromeHeight = () => 88 + (data.preferences.bookmarkBar && bookmarks.list().length ? 32 : 0);
   let window;
@@ -62,7 +62,13 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       if (window.contentView.children.at(-1) !== overlayView) window.contentView.addChildView(overlayView);
     }
   }
+  let publishTimer = null;
   function publish() {
+    if (publishTimer) return;
+    publishTimer = setTimeout(() => { publishTimer = null; publishNow(); }, 24);
+    publishTimer.unref?.();
+  }
+  function publishNow() {
     if (!window || window.isDestroyed() || !tabs?.active) return;
     const tab = tabs.active;
     const content = tab.view.webContents;
@@ -89,7 +95,8 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       ...access.state(controller), panelHeight: pushOpen() ? panelHeight : 0
     };
     layout();
-    window.setTitle(tab.title && tab.mode === 'page' ? `${tab.title} — Mini Browser` : 'Mini Browser');
+    const popup = window.getParentWindow();
+    if (!popup) window.setTitle(tab.title && tab.mode === 'page' ? `${tab.title} — Mini Browser` : 'Mini Browser');
     window.webContents.send('browser:state', state);
     if (overlayView && !overlayView.webContents.isDestroyed()) overlayView.webContents.send('browser:state', state);
   }
@@ -395,7 +402,11 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       if (command === 'fill') {
         if (entry.origin !== loginOrigin(tab.content.getURL())) throw new Error('Saved login belongs to another site.');
         tab.content.send('browser:login-fill', { origin: entry.origin, username: entry.username, password: entry.password }); overlay = null; tab.content.focus();
-      } else if (command === 'copy') clipboard.writeText(entry.password);
+      } else if (command === 'copy') {
+        const copied = entry.password; clipboard.writeText(copied);
+        const timer = setTimeout(() => { try { if (clipboard.readText() === copied) clipboard.clear(); } catch {} }, 30000);
+        timer.unref?.();
+      }
       else return { ok: true, password: entry.password };
     } else throw new Error('Unknown password action.');
     publishAll(); return { ok: true };
@@ -404,7 +415,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     if (!choices || ['history', 'cache', 'cookies', 'passwords'].some(key => typeof choices[key] !== 'boolean')) throw new Error('Choose the data to clear.');
     if (choices.cache) await browsingSession.clearCache();
     if (choices.cookies) { await browsingSession.clearStorageData({ storages: ['cookies'] }); await browsingSession.clearAuthCache(); }
-    if (choices.history) data.clear();
+    if (choices.history) { data.clear(); data.flush(); }
     if (choices.passwords) passwords.clear();
     for (const tab of tabs.items) { tab.loginCandidate = null; tab.passwordPrompt = null; if (choices.passwords) tab.passwordOffer = []; }
     suggestions = []; overlay = null; publishAll(); return { ok: true };
@@ -418,7 +429,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       for (const tab of tabs.items) { tab.loginCandidate = null; tab.passwordPrompt = null; if (choices.passwords) tab.passwordOffer = []; }
       suggestions = []; if (['suggestions', 'password', 'fill'].includes(overlay)) overlay = null;
     },
-    pageActivity() { if (overlay && !['find', 'password'].includes(overlay)) ui('close'); },
+    pageActivity() { if (tabs.active) tabs.active.lastUserActivation = Date.now(); if (overlay && !['find', 'password'].includes(overlay)) ui('close'); },
     showDownloads() { if (tabs.active.find.open) tabs.find('close'); overlay = 'downloads'; overlayHeight = 380; downloadsPanelOpen = true; revealChrome(); },
     downloadPanel(open) { if (open === true && overlay !== 'downloads') ui('downloads'); else if (open !== true && overlay === 'downloads') ui('close'); return { ok: true }; },
     allowsFullscreen: (content, permission, origin) => !busy() && permission === 'fullscreen'
@@ -475,7 +486,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     visited: (tab, url) => { try { data.visit(url, tab.title); } catch (error) { tab.notice = error.message; } },
     titleChanged: (tab, title) => { try { data.title(tab.url, title); } catch (error) { tab.notice = error.message; } },
     closedTab: tab => { try { data.remember(tab); } catch (error) { tab.notice = error.message; } },
-    testing: hidden, changed: publish, keyboard, fullscreen: htmlFullscreen, beforeSwitch: (navigating = false) => {
+    testing: hidden, changed: () => { publish(); onChanged?.(); }, keyboard, fullscreen: htmlFullscreen, beforeSwitch: (navigating = false) => {
       if (tabs?.active?.find.open) tabs.find('close');
       if (tabs?.active) { if (!navigating) tabs.active.loginCandidate = null; tabs.active.passwordPrompt = null; }
       overlay = null; downloadsPanelOpen = false;
@@ -488,7 +499,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       sortTabs();
       tabs.select(restored[restore.active]?.id || restored[0].id);
     } else tabs.create();
-    tabs.active.notice = bookmarks.error;
+    tabs.active.notice = [bookmarks.error, data.notice, passwords.notice].filter(Boolean).join(' ');
   }
   onCreated(controller);
   icons.refresh(bookmarks, browsingSession);

@@ -87,7 +87,12 @@ test('corrupt profile metadata is preserved and test mode never reads or overwri
   const dir = directory(t);
   const file = path.join(dir, 'profiles.json');
   fs.writeFileSync(file, '{broken');
-  assert.throws(() => new ProfileStore(dir), /kept unchanged/);
+  const recovered = new ProfileStore(dir);
+  assert.equal(recovered.readOnly, true);
+  assert.equal(recovered.active().id, 'default');
+  recovered.create('Temporary');
+  assert.equal(recovered.list().length, 2);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{broken');
   const profiles = new ProfileStore(dir, true);
   assert.equal(profiles.partition('default'), 'test-pages');
   const work = profiles.create('Test');

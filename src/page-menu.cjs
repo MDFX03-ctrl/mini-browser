@@ -2,7 +2,7 @@
 const { Menu, clipboard } = require('electron');
 const { isWebUrl } = require('./navigation.cjs');
 
-function pageMenu(content, params, openTab) {
+function pageMenu(content, params, openTab, activated = () => {}) {
   const items = [];
   const history = content.navigationHistory;
   if (history.canGoBack()) items.push({ label: 'Back', click: () => history.goBack() });
@@ -18,6 +18,6 @@ function pageMenu(content, params, openTab) {
       { label: 'Download link', click: () => content.downloadURL(params.linkURL) });
   }
   if (params.mediaType === 'image' && isWebUrl(params.srcURL)) items.push({ label: 'Download image', click: () => content.downloadURL(params.srcURL) });
-  return Menu.buildFromTemplate(items);
+  return Menu.buildFromTemplate(items.map(item => item.click ? { ...item, click: () => { activated(); item.click(); } } : item));
 }
 module.exports = { pageMenu };

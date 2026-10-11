@@ -7,7 +7,7 @@ const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const { gzipSync, deflateSync } = require('node:zlib');
 const root = path.resolve(__dirname, '..');
-const executablePath = fs.realpathSync(process.argv[2] || path.join(root,'.cache','installer-app','Mini Browser.exe'));
+const executablePath = fs.realpathSync(process.argv[2] || path.join(root,'.cache','test-app','Mini Browser.exe'));
 assert.ok(executablePath.startsWith(root+path.sep));
 const temp = path.join(root,'.cache','tmp'); fs.mkdirSync(temp,{recursive:true});
 const uuid = randomUUID(), formats = new Map();
@@ -83,13 +83,14 @@ async function run() {
     assert.equal(forbiddenRequests,0,'SVG cannot fetch external resources');assert.equal(await shell.evaluate(()=>window.__iconScriptRan),false,'SVG scripts never run');
     const bad=`${base}/page/bad`;await shell.evaluate(url=>window.miniBrowser.addBookmark(url,'Broken image'),bad);await new Promise(r=>setTimeout(r,300));assert.equal((await state()).bookmarks.find(b=>b.url===bad).icon,undefined);
     await shell.evaluate(url=>window.miniBrowser.removeBookmark(url),bad);
+    await poll(async()=>!(await state()).bookmarks.some(item=>item.url===bad),'removed bookmark publishes');
     await shell.evaluate(()=>window.miniBrowser.home());
     const saved=(await state()).bookmarks;const before=imageRequests;
     await application.close();application=null;await launch();
     assert.deepEqual((await state()).bookmarks,saved);await new Promise(r=>setTimeout(r,300));assert.equal(imageRequests,before,'restart uses local PNGs');
-    assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length),1);
-    assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].contentView.children.length),2,'only the existing page and chrome views');
-    const original=shell;await shell.evaluate(()=>window.miniBrowser.createProfile('Separate icons'));const ids=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().map(w=>w.id));shell=application.window(ids.find(id=>id!==original.id));await shell.waitForURL('mini://app/index.html');assert.deepEqual((await state()).bookmarks,[]);
+    assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length),1);
+    assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].contentView.children.length),2,'only the existing page and chrome views');
+    const original=shell;await shell.evaluate(()=>window.miniBrowser.createProfile('Separate icons'));await poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win=>win.webContents.getURL()==='mini://app/index.html').length===2),'second profile shell');const ids=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').map(w=>w.id));shell=application.window(ids.find(id=>id!==original.id));await shell.waitForURL('mini://app/index.html');assert.deepEqual((await state()).bookmarks,[]);
     console.log('PASS: SVG scripts/resources blocked, corrupt image fallback, cached restart, profile isolation and no extra decoder view/window');
   } finally {if(application)await application.close().catch(()=>{});server.closeAllConnections();await new Promise(r=>server.close(r));}
 }

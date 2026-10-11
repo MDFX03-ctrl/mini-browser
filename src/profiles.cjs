@@ -25,6 +25,7 @@ class ProfileStore {
     this.test = test;
     this.file = test ? null : path.join(directory, 'profiles.json');
     this.data = { version: 1, activeId: 'default', profiles: [{ id: 'default', name: 'Default' }], pendingDeletion: [] };
+    this.readOnly = false; this.notice = '';
     if (test) return; // Test mode never opens profiles.json, even if it already exists.
     try {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
@@ -36,7 +37,7 @@ class ProfileStore {
           || saved.profiles.some((p) => p.id === id))) throw new Error('Invalid profiles');
       this.data = saved;
     } catch (error) {
-      if (error.code !== 'ENOENT') throw new Error('Saved profiles could not be read. profiles.json has been kept unchanged.');
+      if (error.code !== 'ENOENT') { this.readOnly = true; this.notice = 'Saved profiles could not be read. profiles.json has been kept unchanged. Using a temporary Default profile.'; return; }
       this.commit(this.data);
     }
   }
@@ -63,6 +64,7 @@ class ProfileStore {
     return path.join(this.directory, 'session', 'Partitions', id === 'default' ? 'pages' : `profile-${id}`);
   }
   commit(data) {
+    if (this.readOnly) { this.data = data; return; }
     if (this.file) {
       const temporary = `${this.file}.tmp`;
       try {

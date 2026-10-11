@@ -6,7 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(executablePath.startsWith(root + path.sep), 'Only launch a workspace build');
 const uuid = randomUUID(), data = path.join(path.dirname(executablePath), '.mini-browser', 'tests', uuid);
 const temp = path.join(root, '.cache', 'tmp'), results = path.join(root, 'test-results');
@@ -67,7 +67,7 @@ async function run() {
     assert.equal((await call('navigate', base + '/live-start')).ok, true);
     await poll(async () => { const s = await state(); return s.url === base + '/live-end' && !s.loading && !!s.bookmarks[1].icon; }, 'redirected page updates original bookmark');
     await poll(async () => { const s = await state(); return !!s.tabs.find(tab => tab.id === s.activeTabId)?.icon; }, 'tab favicon');
-    await poll(() => shell.evaluate(() => !document.getElementById('site-favicon').hidden && document.getElementById('site-favicon').naturalWidth > 0), 'omnibox site icon');
+    await poll(() => shell.evaluate(() => document.querySelector('#site-permissions svg use').getAttribute('href') === '#globe' && !document.querySelector('#site-permissions img')), 'browser security indicator');
     assert.deepEqual(await shell.evaluate(() => { const icon = document.querySelector('#bookmark-bar .bookmark-monogram img').getBoundingClientRect(); return { width:icon.width,height:icon.height }; }), {width:16,height:16});
     await call('home');
     await poll(() => shell.evaluate(() => [...document.querySelectorAll('#bookmarks-list .bookmark-monogram img')].length === 2
@@ -97,8 +97,8 @@ async function run() {
     }
     const original = shell;
     await call('createProfile', 'Separate icons');
-    await poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 2), 'second profile');
-    const ids = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => window.id));
+    await poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length === 2), 'second profile');
+    const ids = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').map(window => window.id));
     shell = application.window(ids.find(id => id !== original.id)); await shell.waitForURL('mini://app/index.html');
     assert.deepEqual((await state()).bookmarks, []);
     assert.equal((await original.evaluate(() => window.miniBrowser.getState())).bookmarks.length, 3 + liveSites.length);

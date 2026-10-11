@@ -6,7 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(source.startsWith(root + path.sep));
 const fixture = path.join(root, '.cache', `access-${randomUUID().slice(0,8)}`), temp = path.join(root,'.cache','tmp');
 fs.mkdirSync(temp,{recursive:true});
@@ -27,7 +27,7 @@ const server = http.createServer((req,res) => {
 });
 async function poll(check,label,timeout=20000) { const start=Date.now(); while(Date.now()-start<timeout) {if(await check())return;await new Promise(r=>setTimeout(r,100));} throw new Error('Timed out: '+label); }
 const state=()=>shell.evaluate(()=>window.miniBrowser.getState());
-const call=(method,...args)=>shell.evaluate(({method,args})=>window.miniBrowser[method](...args),{method,args});
+const call=async(method,...args)=>{const before=await state();const result=await shell.evaluate(({method,args})=>window.miniBrowser[method](...args),{method,args});if(method==='newTab')await poll(async()=>(await state()).activeTabId!==before.activeTabId,'new tab publishes');return result;};
 async function remote(code,gesture=false) {
   const current=await state(); const index=current.tabs.findIndex(t=>t.id===current.activeTabId);
   return application.evaluate(({BrowserWindow},{id,index,code,gesture})=>BrowserWindow.fromId(id).contentView.children.filter(view => !view.browserChrome)[index].webContents.executeJavaScript(code,gesture),{id:shell.id,index,code,gesture});
@@ -44,7 +44,7 @@ async function navigate(url) {assert.equal((await call('navigate',url)).ok,true)
 async function media(constraints) {
   await remote(`window.mediaResult='pending'; navigator.mediaDevices.getUserMedia(${JSON.stringify(constraints)}).then(stream=>{window.testStream=stream;window.mediaResult=stream.getTracks().map(t=>t.kind).sort().join(',');}).catch(e=>window.mediaResult=e.name); 'started'`);
 }
-async function prompt(labels) {await poll(async()=>!!(await state()).permissionPrompt,'permission prompt');assert.deepEqual((await state()).permissionPrompt.labels,labels);}
+async function prompt(labels) {await poll(async()=>JSON.stringify((await state()).permissionPrompt?.labels)===JSON.stringify(labels),'permission prompt');assert.deepEqual((await state()).permissionPrompt.labels,labels);}
 async function finishMedia(result) {await poll(async()=>await remote('window.mediaResult')===result,'media result '+result);}
 async function run() {
   await new Promise(r=>server.listen(0,'127.0.0.1',r)); const base=`http://127.0.0.1:${server.address().port}`;
@@ -56,12 +56,12 @@ async function run() {
     await poll(()=>application.evaluate(({BrowserWindow},id)=>{const win=BrowserWindow.fromId(id);return win.contentView.children.filter(view => !view.browserChrome)[0].getBounds().y>116&&win.contentView.children.filter(view => !view.browserChrome)[0].getVisible();},shell.id),'prompt pushes page down');
     await shell.screenshot({path:path.join(results,'microphone-permission.png')});
     await shell.locator('#permission-allow').click(); await finishMedia('audio');
-    assert.equal((await state()).permissionPrompt,null);
+    await poll(async()=>(await state()).permissionPrompt===null,'permission panel closes');
     await remote('window.testStream.getTracks().forEach(t=>t.stop())');
-    await media({audio:true});await finishMedia('audio');assert.equal((await state()).permissionPrompt,null);
+    await media({audio:true});await finishMedia('audio');await poll(async()=>(await state()).permissionPrompt===null,'permission panel closes');
     await remote('window.testStream.getTracks().forEach(t=>t.stop())');
     await media({video:true});await prompt(['Camera']);await shell.locator('#permission-block').click();await finishMedia('NotAllowedError');
-    await media({video:true});await finishMedia('NotAllowedError');assert.equal((await state()).permissionPrompt,null);
+    await media({video:true});await finishMedia('NotAllowedError');await poll(async()=>(await state()).permissionPrompt===null,'permission panel closes');
     console.log('PASS: fake microphone captures after consent, stays allowed on repeat; camera is independent and remembered when blocked');
     await shell.locator('#site-permissions').click();await poll(async()=>(await state()).sitePanelOpen,'site settings');
     assert.equal(await shell.evaluate(()=>document.querySelector('[data-permission="microphone"]').value),'allow');
@@ -84,7 +84,7 @@ async function run() {
     });
     await new Promise(r=>setTimeout(r,5500));
     await remote("window.shareResult='pending';navigator.mediaDevices.getDisplayMedia({video:true}).then(s=>{s.getTracks().forEach(t=>t.stop());window.shareResult='allowed';}).catch(e=>window.shareResult=e.name);'started'",false);
-    await poll(async()=>await remote('window.shareResult')!=='pending','gestureless screen sharing denied');assert.equal((await state()).permissionPrompt,null);
+    await poll(async()=>await remote('window.shareResult')!=='pending','gestureless screen sharing denied');await poll(async()=>(await state()).permissionPrompt===null,'permission panel closes');
     await application.evaluate(({BrowserWindow},id)=>{const win=BrowserWindow.fromId(id);win.show();win.focus();win.contentView.children.filter(view => !view.browserChrome).at(-1).webContents.focus();},shell.id);
     await remote("window.shareResult='pending';navigator.mediaDevices.getDisplayMedia({video:true,audio:true}).then(s=>{s.getTracks().forEach(t=>t.stop());window.shareResult='allowed';}).catch(e=>window.shareResult=e.name);'started'",true);
     await poll(async()=>{const s=await state();if(s.permissionPrompt?.kind==='screen')return true;const result=await remote('window.shareResult');if(result!=='pending')throw new Error('Screen share failed before picker: '+result);return false;},'screen source picker');
@@ -100,13 +100,13 @@ async function run() {
     await shell.screenshot({path:path.join(results,'official-bookmark-icons.png')});
     const before=iconRequests;await new Promise(r=>setTimeout(r,300));assert.equal(iconRequests,before,'start screen uses local icon');
     const pos=await shell.evaluate(()=>({tab:document.querySelector('.tab-card:last-child').getBoundingClientRect().right,plus:document.querySelector('#new-tab').getBoundingClientRect().left}));assert.ok(pos.plus>=pos.tab&&pos.plus-pos.tab<10);
-    const original=shell;await call('createProfile','Other');await poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length===2),'second profile');
-    const ids=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().map(w=>w.id));shell=application.window(ids.find(id=>id!==original.id));await shell.waitForURL('mini://app/index.html');await navigate(base+'/');
+    const original=shell;await call('createProfile','Other');await poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length===2),'second profile');
+    const ids=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').map(w=>w.id));shell=application.window(ids.find(id=>id!==original.id));await shell.waitForURL('mini://app/index.html');await navigate(base+'/');
     await media({audio:true});await prompt(['Microphone']);await shell.locator('#permission-block').click();await finishMedia('NotAllowedError');
     const other=(await state()).activeProfile.id;
-    await application.close(); application=null;await launch();assert.equal((await state()).activeProfile.id,other);await navigate(base+'/');await media({audio:true});await finishMedia('NotAllowedError');assert.equal((await state()).permissionPrompt,null);
-    await call('switchProfile','default');await poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length===2),'default reopened');
-    const restarted=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().map(w=>w.id));shell=application.window(restarted.find(id=>id!==shell.id));await shell.waitForURL('mini://app/index.html');await navigate(base+'/');await media({audio:true});await finishMedia('audio');assert.equal((await state()).permissionPrompt,null);await remote('window.testStream.getTracks().forEach(t=>t.stop())');
+    await application.close(); application=null;await launch();assert.equal((await state()).activeProfile.id,other);await navigate(base+'/');await media({audio:true});await finishMedia('NotAllowedError');await poll(async()=>(await state()).permissionPrompt===null,'permission panel closes');
+    await call('switchProfile','default');await poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length===2),'default reopened');
+    const restarted=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').map(w=>w.id));shell=application.window(restarted.find(id=>id!==shell.id));await shell.waitForURL('mini://app/index.html');await navigate(base+'/');await media({audio:true});await finishMedia('audio');await poll(async()=>(await state()).permissionPrompt===null,'permission panel closes');await remote('window.testStream.getTracks().forEach(t=>t.stop())');
     assert.ok((await state()).bookmarks[0].icon);await remote("location.href='/download'");await poll(async()=>(await state()).downloads.some(item=>item.state==='completed'),'download completes');await call('downloadsPanel',false);
     for(const value of ['file:///C:/Windows','javascript:alert(1)','mini://app/index.html'])assert.equal((await call('navigate',value)).ok,false);
     assert.ok(fs.existsSync(path.join(data,'permissions.json')));assert.ok(fs.existsSync(path.join(data,'profiles',other,'permissions.json')));

@@ -14,14 +14,34 @@ function write(file, data) {
 class ProfileData {
   constructor(directory) {
     this.file = path.join(directory, 'history.json'); this.preferencesFile = path.join(directory, 'preferences.json');
-    const data = read(this.file, { entries: [], closed: [] });
-    if (!Array.isArray(data.entries) || !Array.isArray(data.closed)
+    this.readOnly = new Set(); this.notice = '';
+    let data;
+    try { data = read(this.file, { entries: [], closed: [] }); }
+    catch { data = { entries: [], closed: [] }; this.readOnly.add(this.file); this.notice = 'History could not be read. The original file is unchanged.'; }
+    if (!data || typeof data !== 'object' || !Array.isArray(data.entries) || !Array.isArray(data.closed)
       || data.entries.some(entry => !isWebUrl(entry.url) || typeof entry.title !== 'string' || !Number.isFinite(entry.visited))
-      || data.closed.some(entry => !isWebUrl(entry.url))) throw new Error('Invalid history file. The original file was preserved.');
+      || data.closed.some(entry => !isWebUrl(entry.url))) {
+      this.readOnly.add(this.file); this.notice = 'History could not be read. The original file is unchanged.'; data = { entries: [], closed: [] };
+    }
     this.entries = data.entries.slice(0, 5000); this.closed = data.closed.slice(-25);
-    this.preferences = { bookmarkBar: read(this.preferencesFile, {}).bookmarkBar !== false };
+    let preferences;
+    try { preferences = read(this.preferencesFile, {}); }
+    catch { preferences = {}; this.readOnly.add(this.preferencesFile); this.notice = 'Preferences could not be read. The original file is unchanged.'; }
+    if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
+      this.readOnly.add(this.preferencesFile); this.notice = 'Preferences could not be read. The original file is unchanged.'; preferences = {};
+    }
+    this.preferences = { bookmarkBar: preferences.bookmarkBar !== false };
+    this.timer = null;
   }
-  save(entries = this.entries, closed = this.closed) { write(this.file, { entries, closed }); this.entries = entries; this.closed = closed; }
+  save(entries = this.entries, closed = this.closed) {
+    this.entries = entries; this.closed = closed;
+    // A pending write is kept, so frequent title changes cannot postpone it indefinitely.
+    if (!this.readOnly.has(this.file) && !this.timer) {
+      this.timer = setTimeout(() => { try { this.flush(); } catch { this.notice = 'History could not be saved.'; } }, 1200);
+      this.timer.unref?.();
+    }
+  }
+  flush() { clearTimeout(this.timer); this.timer = null; if (!this.readOnly.has(this.file)) write(this.file, { entries: this.entries, closed: this.closed }); }
   visit(url, title = '') {
     if (!isWebUrl(url)) return;
     const previous = this.entries.find(entry => entry.url === url);
@@ -36,7 +56,7 @@ class ProfileData {
   }
   reopen() { const entry = this.closed.at(-1); if (entry) this.save(this.entries, this.closed.slice(0, -1)); return entry; }
   clear() { this.save([], []); }
-  bookmarkBar(show) { const preferences = { bookmarkBar: show === true }; write(this.preferencesFile, preferences); this.preferences = preferences; }
+  bookmarkBar(show) { const preferences = { bookmarkBar: show === true }; if (!this.readOnly.has(this.preferencesFile)) write(this.preferencesFile, preferences); this.preferences = preferences; }
   suggest(text, bookmarks) {
     const query = String(text).trim().toLowerCase().slice(0, 2048); if (!query) return [];
     const seen = new Set(), entries = [];

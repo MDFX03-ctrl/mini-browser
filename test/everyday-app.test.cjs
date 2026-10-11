@@ -6,7 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(source.startsWith(root + path.sep));
 const fixture = path.join(root, '.cache', 'everyday-' + randomUUID().slice(0, 8));
 const temp = path.join(root, '.cache', 'tmp'); fs.mkdirSync(temp, { recursive: true });
@@ -48,7 +48,7 @@ async function profileWindow(id) {
   let windowId;
   await poll(async () => {
     windowId = await application.evaluate(async ({ BrowserWindow }, id) => {
-      for (const win of BrowserWindow.getAllWindows()) if ((await win.webContents.executeJavaScript('window.miniBrowser?.getState()'))?.activeProfile.id === id) return win.id;
+      for (const win of BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')) if ((await win.webContents.executeJavaScript('window.miniBrowser?.getState()'))?.activeProfile.id === id) return win.id;
     }, id); return !!windowId;
   }, 'profile window'); return application.window(windowId);
 }
@@ -65,11 +65,11 @@ async function run() {
     await shell.evaluate(() => document.getElementById('start-form').requestSubmit());
     await poll(async () => (await state()).url === base + '/alpha' && !(await state()).loading, 'central address field navigates');
     await call('addBookmark', base + '/alpha', 'Alpha bookmark'); await call('addBookmark', base + '/beta', 'Beta bookmark');
-    assert.equal(await shell.evaluate(() => document.querySelectorAll('#bookmark-bar .bookmark-open').length), 2);
+    await poll(() => shell.evaluate(() => document.querySelectorAll('#bookmark-bar .bookmark-open').length === 2), 'bookmark bar updates');
     await call('reorderBookmarks', [base + '/beta', base + '/alpha']);
-    assert.deepEqual(await shell.evaluate(() => [...document.querySelectorAll('#bookmark-bar strong')].map(node => node.textContent.trim())), ['Beta bookmark', 'Alpha bookmark']);
+    await poll(() => shell.evaluate(() => [...document.querySelectorAll('#bookmark-bar strong')].map(node => node.textContent.trim()).join('|') === 'Beta bookmark|Alpha bookmark'), 'bookmark order updates');
     await shell.locator('#menu-toggle').click(); await shell.overlay().locator('#bookmark-bar-toggle').click();
-    assert.equal((await state()).bookmarkBar, false); assert.equal(await shell.evaluate(() => document.getElementById('bookmark-bar').hidden), true);
+    await poll(async () => !(await state()).bookmarkBar, 'bookmark bar toggle'); assert.equal((await state()).bookmarkBar, false); assert.equal(await shell.evaluate(() => document.getElementById('bookmark-bar').hidden), true);
     await shell.overlay().locator('#bookmark-bar-toggle').click();
     await call('ui', 'close'); await navigate(base + '/beta');
     const printing = await application.evaluate(({ BrowserWindow }, id) => {
@@ -97,11 +97,11 @@ async function run() {
     fs.writeFileSync(path.join(fixture, 'history-bubble.png'), Buffer.from(overlayPNG, 'base64'));
     assert.equal(topBefore, (await state()).chromeHeight, 'library floats over the page without pushing it');
     await call('ui', 'close'); await call('newTab'); await navigate(base + '/recover'); const recover = (await state()).activeTabId;
-    await call('closeTab', recover); await key('t', ['control', 'shift']);
+    await call('closeTab', recover); await poll(async () => (await state()).activeTabId !== recover, 'closed tab publishes'); await key('t', ['control', 'shift']);
     await poll(async () => (await state()).url === base + '/recover', 'reopen last closed tab');
     const recoverId = (await state()).activeTabId;
     await call('tab', 'pin-tab', recoverId); await call('tab', 'mute', recoverId);
-    assert.equal((await state()).tabs[0].id, recoverId); assert.equal((await state()).tabs[0].muted, true);
+    await poll(async () => (await state()).tabs[0].id === recoverId && (await state()).tabs[0].muted, 'pin and mute publish'); assert.equal((await state()).tabs[0].id, recoverId); assert.equal((await state()).tabs[0].muted, true);
     // Capture a native context menu instead of selecting an OS popup through screen coordinates.
     await application.evaluate(({ Menu }) => { const build = Menu.buildFromTemplate; Menu.buildFromTemplate = template => { global.lastTabMenu = template; return { popup() {} }; }; global.restoreMenu = () => { Menu.buildFromTemplate = build; }; });
     await call('ui', 'tab-menu', recoverId);
@@ -114,6 +114,7 @@ async function run() {
     await page('document.querySelector("[name=username]").value="alice";document.querySelector("[name=password]").value="private-fixture-password";document.querySelector("form").requestSubmit()');
     await poll(async () => (await state()).passwordPrompt?.username === 'alice', 'successful login prompts save');
     await shell.overlay().locator('#password-save').click(); await call('ui', 'passwords');
+    await poll(async () => (await state()).passwords.length === 1, 'saved password library');
     const saved = (await state()).passwords[0]; assert.equal(saved.username, 'alice'); assert.equal(saved.password, undefined);
     const passwordFile = path.join(fixture, '.mini-browser', 'passwords.json');
     assert.ok(!fs.readFileSync(passwordFile, 'utf8').includes('private-fixture-password'), 'DPAPI ciphertext only');
@@ -127,9 +128,9 @@ async function run() {
     assert.equal(await page('document.querySelector("[name=username]").value'), 'alice');
     await navigate(base + '/failed'); await page('document.querySelector("input[type=password]").value="bad";document.querySelector("form").requestSubmit()');
     await new Promise(resolve => setTimeout(resolve, 600)); assert.equal((await state()).passwordPrompt, null);
-    await call('createProfile', 'Other'); otherProfile = (await state()).profiles.find(profile => profile.name === 'Other').id;
+    await call('createProfile', 'Other'); await poll(async () => (await state()).profiles.some(profile => profile.name === 'Other'), 'profile publishes'); otherProfile = (await state()).profiles.find(profile => profile.name === 'Other').id;
     const firstShell = shell; shell = await profileWindow(otherProfile);
-    await navigate(base + '/login'); await call('ui', 'passwords'); assert.deepEqual((await state()).passwords, []); assert.deepEqual((await state()).passwordOffer, []);
+    await navigate(base + '/login'); await call('ui', 'passwords'); await poll(async () => (await state()).overlay === 'passwords', 'passwords publish'); assert.deepEqual((await state()).passwords, []); assert.deepEqual((await state()).passwordOffer, []);
     await key('h', ['control']); assert.ok(!(await state()).history.some(entry => entry.url === base + '/alpha'));
     await navigate(base + '/other');
     shell = firstShell;
@@ -137,30 +138,31 @@ async function run() {
     await application.close(); application = null; await launch();
     assert.equal((await state()).activeProfile.id, otherProfile);
     await call('switchProfile', defaultProfile); shell = await profileWindow(defaultProfile);
-    await call('ui', 'history'); assert.ok((await state()).history.some(entry => entry.url === base + '/alpha'));
-    await call('ui', 'passwords'); assert.equal((await state()).passwords.length, 1);
+    await call('ui', 'history'); await poll(async () => (await state()).overlay === 'history', 'history publishes'); assert.ok((await state()).history.some(entry => entry.url === base + '/alpha'));
+    await call('ui', 'passwords'); await poll(async () => (await state()).overlay === 'passwords', 'passwords publish'); assert.equal((await state()).passwords.length, 1);
     assert.equal((await state()).tabs[0].pinned, true); assert.equal((await state()).tabs[0].muted, true);
     await navigate(base + '/login'); await poll(async () => (await state()).passwordOffer.length === 1, 'login restored');
     await page('document.cookie="profileCookie=present; path=/"');
     await call('clearData', { history: true, cache: false, cookies: false, passwords: false });
     assert.ok((await page('document.cookie')).includes('profileCookie=present'));
-    await call('ui', 'passwords'); assert.equal((await state()).passwords.length, 1);
+    await call('ui', 'passwords'); await poll(async () => (await state()).overlay === 'passwords', 'passwords publish'); assert.equal((await state()).passwords.length, 1);
     await call('clearData', { history: false, cache: true, cookies: true, passwords: true });
-    assert.equal(await page('document.cookie'), ''); await call('ui', 'passwords'); assert.deepEqual((await state()).passwords, []);
-    const defaultShell = shell; shell = await profileWindow(otherProfile); await call('ui', 'history'); assert.ok((await state()).history.some(entry => entry.url === base + '/other')); shell = defaultShell;
+    assert.equal(await page('document.cookie'), ''); await poll(async () => (await state()).passwords.length === 0, 'password clear publishes'); await call('ui', 'passwords'); await poll(async () => (await state()).overlay === 'passwords', 'passwords publish'); assert.deepEqual((await state()).passwords, []);
+    const defaultShell = shell; shell = await profileWindow(otherProfile); await call('ui', 'history'); await poll(async () => (await state()).overlay === 'history', 'history publishes'); assert.ok((await state()).history.some(entry => entry.url === base + '/other')); shell = defaultShell;
     console.log('PASS: history/password/tab metadata survive restart; selective clear stays inside the selected profile');
     await application.evaluate(({ app }) => { global.quitCount = 0; global.preventQuit = event => { global.quitCount++; event.preventDefault(); }; app.on('before-quit', global.preventQuit); });
-    const ids = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(win => win.id));
+    const ids = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').map(win => win.id));
     await application.evaluate(({ BrowserWindow }, ids) => { for (const id of ids) BrowserWindow.fromId(id).close(); }, ids);
-    await poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length === 0), 'all windows close');
+    await poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length === 0), 'all windows close');
     assert.equal(application.process().exitCode, null); assert.equal(await application.evaluate(() => global.quitCount), 0);
+    const reopenId = JSON.parse(fs.readFileSync(path.join(fixture, '.mini-browser', 'profiles.json'))).activeId;
     await application.evaluate(({ app }) => app.emit('second-instance', {}, [], '', {}));
-    shell = await profileWindow(otherProfile);
+    shell = await profileWindow(reopenId);
     await shell.locator('#menu-toggle').click(); await shell.overlay().locator('[data-ui="exit"]').click();
     await poll(() => application.evaluate(() => global.quitCount === 1), 'Exit requests app quit');
     await application.evaluate(({ app }) => app.removeListener('before-quit', global.preventQuit));
     console.log('PASS: closing the last window keeps the process alive, relaunch reopens a window, and menu Exit quits the app');
-  } finally { if (application) await application.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { if (application) { await application.evaluate(({ app }) => { if (global.preventQuit) app.removeListener('before-quit', global.preventQuit); }).catch(() => {}); await application.close(); } server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
 

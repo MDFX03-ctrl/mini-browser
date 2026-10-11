@@ -7,7 +7,7 @@ const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(executablePath.startsWith(root + path.sep), 'Only test a project-local build');
 const temp = path.join(root, '.cache', 'tmp');
 const results = path.join(root, 'test-results');
@@ -49,7 +49,13 @@ async function poll(check, label, timeout = 15000) {
   throw new Error(`Timed out: ${label}`);
 }
 const state = () => shell.evaluate(() => window.miniBrowser.getState());
-const call = (method, ...args) => shell.evaluate(({ method, args }) => window.miniBrowser[method](...args), { method, args });
+const call = async (method, ...args) => {
+  const previous = (await state()).activeTabId;
+  const result = await shell.evaluate(({ method, args }) => window.miniBrowser[method](...args), { method, args });
+  if (method === 'newTab') await poll(async () => (await state()).activeTabId !== previous, 'new tab publishes');
+  if (method === 'selectTab') await poll(async () => (await state()).activeTabId === args[0], 'tab selection publishes');
+  return result;
+};
 async function remote(code, id, gesture = true) {
   const s = await state();
   const index = s.tabs.findIndex((tab) => tab.id === (id || s.activeTabId));
@@ -70,6 +76,7 @@ async function popupChecks(base) {
       request.url.startsWith('https://popup.mini.test/') ? '<!doctype html><title>HTTPS login popup</title><script>if(window.opener) window.opener.postMessage({type:"popup-ready",userAgent:navigator.userAgent}, "*");</script>' : 'Not found',
       { headers: { 'Content-Type': 'text/html' } }));
   }, shell.id);
+  await key('Shift');
   const count = (await state()).tabs.length;
   assert.equal(await remote(`(() => {
     window.popupMessages = [];
@@ -77,9 +84,9 @@ async function popupChecks(base) {
     window.authPopup = window.open('https://popup.mini.test/login', 'auth', 'width=420,height=500,nodeIntegration=yes,contextIsolation=no,sandbox=no,webSecurity=no');
     return window.authPopup !== null;
   })()`), true, 'window.open returns a real window proxy');
-  await poll(() => application.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().some(win => win.getParentWindow()?.id === id && !win.webContents.isLoading()), shell.id), 'HTTPS popup loads');
+  await poll(() => application.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').some(win => win.getParentWindow()?.id === id && !win.webContents.isLoading()), shell.id), 'HTTPS popup loads');
   const popup = await application.evaluate(({ BrowserWindow }, id) => {
-    const parent = BrowserWindow.fromId(id), child = BrowserWindow.getAllWindows().find(win => win.getParentWindow() === parent);
+    const parent = BrowserWindow.fromId(id), child = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').find(win => win.getParentWindow() === parent);
     const preferences = child.webContents.getLastWebPreferences();
     return { id: child.id, sessionMatches: child.webContents.session === parent.contentView.children.filter(view => !view.browserChrome)[0].webContents.session,
       sandbox: preferences.sandbox, isolation: preferences.contextIsolation, security: preferences.webSecurity,
@@ -99,19 +106,20 @@ async function popupChecks(base) {
     assert.equal(await remote(`window.open(${JSON.stringify(url)}, '_blank', 'width=400,height=400') === null`), true);
     assert.equal(await popupContent(`window.open(${JSON.stringify(url)}, '_blank', 'width=400,height=400') === null`), true);
   }
-  assert.match((await state()).notice, /Only http and https/);
+  await poll(async () => /Only http and https/.test((await state()).notice), 'blocked navigation notice');
   assert.equal(await shell.evaluate(() => window.open('https://popup.mini.test/shell', '_blank', 'width=400,height=400') === null), true, 'trusted shell still denies popups');
   await application.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id).destroy(), popup.id);
   await poll(async () => await remote('window.authPopup.closed'), 'opener observes popup closing');
-  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length), 1);
   assert.equal((await state()).url, base + '/a');
   console.log('PASS: HTTPS popups return a live opener-connected window in the same session; secure preferences, Chrome UA/languages, and shell/protocol restrictions');
 }
 async function popupCloseCheck() {
   await navigate('https://popup.mini.test/opener');
+  await key('Shift');
   assert.equal(await remote("window.authPopup = window.open('https://popup.mini.test/login', 'auth-close', 'width=420,height=500'); window.authPopup !== null"), true);
-  await poll(() => application.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().some(win => win.getParentWindow()?.id === id && !win.webContents.isLoading()), shell.id), 'final popup loads');
-  const popup = await application.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().find(win => win.getParentWindow()?.id === id).id, shell.id);
+  await poll(() => application.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').some(win => win.getParentWindow()?.id === id && !win.webContents.isLoading()), shell.id), 'final popup loads');
+  const popup = await application.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').find(win => win.getParentWindow()?.id === id).id, shell.id);
   await application.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id).webContents.executeJavaScript('onbeforeunload = () => false; "ready";'), popup);
   // A test-only empty window keeps Electron alive while we inspect parent cleanup.
   const keeper = await application.evaluate(({ BrowserWindow }) => new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } }).id);
@@ -123,7 +131,7 @@ async function key(keyCode, modifiers = [], shellTarget = false) {
   const s = await state();
   const index = s.tabs.findIndex((tab) => tab.id === s.activeTabId);
   await application.evaluate(({ BrowserWindow }, { keyCode, modifiers, index, shellTarget }) => {
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0];
     const content = shellTarget ? win.webContents : win.contentView.children.filter(view => !view.browserChrome)[index].webContents;
     content.focus();
     content.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
@@ -146,7 +154,7 @@ async function windowDetails() {
   const s = await state();
   const index = s.tabs.findIndex((tab) => tab.id === s.activeTabId);
   return application.evaluate(({ BrowserWindow }, index) => {
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0];
     return { fullscreen: win.isFullScreen(), bounds: win.getBounds(), content: win.getContentBounds(), view: win.contentView.children.filter(view => !view.browserChrome)[index].getBounds() };
   }, index);
 }
@@ -160,7 +168,7 @@ async function assertWebsiteFillsWindow() {
 }
 async function startVideo() {
   await application.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0];
     if (win.isMinimized()) win.restore();
     win.showInactive();
   });
@@ -194,7 +202,7 @@ async function run() {
     shell = await application.firstWindow();
     await shell.waitForURL('mini://app/index.html');
     await application.evaluate(({ BrowserWindow }, realPointer) => {
-      const win = BrowserWindow.getAllWindows()[0];
+      const win = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0];
       win.showInactive();
       if (realPointer) win.focus();
       else win.setIgnoreMouseEvents(true);
@@ -205,6 +213,7 @@ async function run() {
     await popupChecks(base);
     await remote("document.cookie='shared=default;path=/'; localStorage.setItem('shared','default'); sessionStorage.setItem('owner','A'); document.getElementById('note').value='Keep A';");
     await shell.locator('#new-tab').click();
+    await poll(async () => (await state()).activeTabId !== first, 'new tab publishes');
     const second = (await state()).activeTabId;
     assert.notEqual(first, second);
     assert.equal((await state()).mode, 'welcome');
@@ -223,15 +232,16 @@ async function run() {
     await poll(async () => (await state()).url === `${base}/a` && !(await state()).loading, 'first tab back');
     await remote("document.title='Background B';", second);
     assert.equal((await state()).title, 'Tab A');
-    assert.equal((await state()).tabs.find((tab) => tab.id === second).title, 'Background B');
+    await poll(async () => (await state()).tabs.find(tab => tab.id === second).title === 'Background B', 'background title publishes');
     await call('selectTab', second);
     assert.equal(await remote("document.getElementById('note').value"), 'Keep B');
     assert.equal((await state()).canGoBack, false);
     console.log('PASS: independent tab views, forms, titles, history, and session storage; cookies/local storage shared only within the profile');
 
+    await key('Shift');
     await remote("document.getElementById('popup').click();");
     await poll(async () => (await state()).tabs.length === 3 && !(await state()).loading, 'popup opens a tab');
-    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length), 1);
     await key('T', ['control']);
     await poll(async () => (await state()).tabs.length === 4, 'Ctrl+T');
     await key('W', ['control'], true);
@@ -244,7 +254,7 @@ async function run() {
     await poll(async () => (await state()).loading, 'slow background tab');
     await call('selectTab', first);
     const closingIndex = (await state()).tabs.findIndex((tab) => tab.id === second);
-    const closingContent = await application.evaluate(({ BrowserWindow }, index) => BrowserWindow.getAllWindows()[0].contentView.children.filter(view => !view.browserChrome)[index].webContents.id, closingIndex);
+    const closingContent = await application.evaluate(({ BrowserWindow }, index) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].contentView.children.filter(view => !view.browserChrome)[index].webContents.id, closingIndex);
     assert.equal((await call('closeTab', second)).ok, true);
     assert.equal(await application.evaluate(({ webContents }, id) => webContents.fromId(id) === undefined, closingContent), true);
     assert.equal((await state()).activeTabId, first);
@@ -255,7 +265,7 @@ async function run() {
     // Profile windows and transfers are exercised by profiles-app.test.cjs.
     for (const tab of (await state()).tabs.slice(1)) await call('closeTab', tab.id);
     await navigate(base + '/a');
-    await application.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setSize(480, 320); win.showInactive(); });
+    await application.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0]; win.setSize(480, 320); win.showInactive(); });
     if (process.env.MINI_BROWSER_POINTER_SMOKE === '1') await call('pin');
     const initialPin = (await state()).pinned;
     let previousBounds;
@@ -278,7 +288,7 @@ async function run() {
     assert.equal((await windowDetails()).view.y, (await state()).chromeHeight);
     await shell.screenshot({ path: path.join(results, 'fullscreen-controls.png') });
     // Simulated typing needs a focused native window to deliver focus/blur events.
-    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].focus());
     await key('L', ['control']);
     await pointAt({ x: d.content.x + Math.floor(d.content.width / 2), y: d.content.y + Math.floor(d.content.height / 2) });
     await new Promise((resolve) => setTimeout(resolve, 900));
@@ -299,9 +309,9 @@ async function run() {
     assert.deepEqual([videoRect.x, videoRect.y, videoRect.width, videoRect.height], [0, 0, videoRect.viewportWidth, videoRect.viewportHeight]);
     await application.evaluate(async ({ BrowserWindow }, file) => {
       const fs = process.mainModule.require('node:fs');
-      fs.writeFileSync(file, (await BrowserWindow.getAllWindows()[0].contentView.children.filter(view => !view.browserChrome)[0].webContents.capturePage()).toPNG());
+      fs.writeFileSync(file, (await BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].contentView.children.filter(view => !view.browserChrome)[0].webContents.capturePage()).toPNG());
     }, path.join(results, 'floating-video.png'));
-    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(560, 360));
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].setSize(560, 360));
     await assertWebsiteFillsWindow();
     assert.equal(await remote('document.fullscreenElement?.id'), 'video');
     assert.equal((await windowDetails()).fullscreen, false);
@@ -318,12 +328,12 @@ async function run() {
       { x: d.content.x + Math.floor(d.content.width / 2), y: d.content.y + Math.floor(d.content.height / 2) });
     await poll(async () => !(await state()).chromeVisible, 'video fullscreen hides controls again');
     await call('toggleUI');
-    assert.equal((await state()).chromeVisible, true);
+    await poll(async () => (await state()).chromeVisible, 'controls publish');
     assert.equal(await remote('document.fullscreenElement?.id'), 'video', 'the window icon only changes browser UI, keeping the video expanded');
     await call('toggleUI');
     await assertWebsiteFillsWindow();
     await call('toggleUI');
-    assert.equal((await state()).chromeVisible, true);
+    await poll(async () => (await state()).chromeVisible, 'controls publish');
     assert.equal(await remote('document.fullscreenElement?.id'), 'video');
     await application.evaluate(({ screen }) => { screen.getCursorScreenPoint = screen.testOriginalCursor; delete screen.testOriginalCursor; });
     await key('Escape');
@@ -370,7 +380,7 @@ async function run() {
     await poll(async () => (await windowDetails()).fullscreen, 'F11 enters screen fullscreen separately');
     await assertWebsiteFillsWindow();
     await call('toggleUI');
-    assert.equal((await state()).chromeVisible, true);
+    await poll(async () => (await state()).chromeVisible, 'controls publish');
     assert.equal((await windowDetails()).fullscreen, true, 'UI icon does not exit monitor fullscreen either');
     await key('Escape');
     await poll(async () => !(await windowDetails()).fullscreen, 'Escape exits screen fullscreen');
@@ -388,7 +398,7 @@ async function run() {
     await poll(async () => !!(await state()).permissionPrompt, 'notification permission prompt');
     await shell.locator('#permission-block').click();
     await poll(async () => await remote('window.notificationResult') === 'denied', 'notification blocked');
-    const allPrefs = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(view => !view.browserChrome).map((view) => {
+    const allPrefs = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].contentView.children.filter(view => !view.browserChrome).map((view) => {
       const p = view.webContents.getLastWebPreferences();
       return p.sandbox && p.contextIsolation && p.webSecurity && !p.nodeIntegration && (!p.preload || p.preload.endsWith('page-preload.cjs'));
     }));
@@ -396,12 +406,12 @@ async function run() {
     const beforeCloseState = await state();
     const beforeExternalClose = beforeCloseState.tabs.length;
     const externalIndex = beforeCloseState.tabs.findIndex((tab) => tab.id === beforeCloseState.activeTabId);
-    await application.evaluate(({ BrowserWindow }, index) => BrowserWindow.getAllWindows()[0].contentView.children.filter(view => !view.browserChrome)[index].webContents.close(), externalIndex);
+    await application.evaluate(({ BrowserWindow }, index) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].contentView.children.filter(view => !view.browserChrome)[index].webContents.close(), externalIndex);
     await poll(async () => (await state()).tabs.length === beforeExternalClose - 1, 'external page close removes its tab');
     for (const tab of [...(await state()).tabs]) await call('closeTab', tab.id);
-    assert.equal((await state()).tabs.length, 1);
+    await poll(async () => (await state()).tabs.length === 1 && (await state()).mode === 'welcome', 'last tab close publishes');
     assert.equal((await state()).mode, 'welcome');
-    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(view => !view.browserChrome).length), 1);
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0].contentView.children.filter(view => !view.browserChrome).length), 1);
     const data = await application.evaluate(({ app }) => app.getPath('userData'));
     assert.ok(data.startsWith(root + path.sep));
     assert.equal(fs.existsSync(path.join(data, 'profiles.json')), false);
@@ -412,7 +422,7 @@ async function run() {
     if (application) {
       console.error('State on failure:', await state().catch(() => 'unavailable'));
       console.error('Pointer/window:', await application.evaluate(({ BrowserWindow, screen }) => {
-        const win = BrowserWindow.getAllWindows()[0];
+        const win = BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')[0];
         return {cursor: screen.getCursorScreenPoint(), content: win.getContentBounds(), focused: win.isFocused(), visible: win.isVisible()};
       }).catch(() => 'unavailable'));
     }

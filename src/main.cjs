@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, protocol, session, screen, safeStorage, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, session, screen, safeStorage, Tray, Menu, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { BookmarkStore } = require('./bookmarks.cjs');
@@ -17,13 +17,14 @@ const { isWebUrl } = require('./navigation.cjs');
 app.setName('Mini Browser');
 const root = app.isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '..');
 const installed = app.isPackaged && fs.existsSync(path.join(process.resourcesPath, 'installed.flag'));
-const testProfile = process.env.MINI_BROWSER_TEST === '1'
+const testEnabled = process.env.MINI_BROWSER_TEST === '1' && !(app.isPackaged && installed);
+const testProfile = testEnabled
   && /^[a-f\d-]{36}$/i.test(process.env.MINI_BROWSER_TEST_PROFILE || '')
   ? path.join(root, '.mini-browser', 'tests', process.env.MINI_BROWSER_TEST_PROFILE) : null;
-const dataDirectory = testProfile || (installed && process.env.MINI_BROWSER_TEST !== '1'
+const dataDirectory = testProfile || (installed && !testEnabled
   ? app.getPath('userData') : path.join(root, '.mini-browser'));
 fs.mkdirSync(dataDirectory, { recursive: true });
-const hidden = process.env.MINI_BROWSER_TEST === '1';
+const hidden = testEnabled;
 if (hidden) { const directory = path.join(dataDirectory, 'downloads'); fs.mkdirSync(directory, { recursive: true }); app.setPath('downloads', directory); }
 app.setPath('userData', dataDirectory);
 app.setPath('sessionData', path.join(dataDirectory, 'session'));
@@ -64,6 +65,7 @@ function readBounds() {
 
 const { randomUUID } = require('node:crypto');
 const windows = new Map();
+let iconDecoderWindow, iconDecoderReady;
 const bookmarkStores = new Map();
 const dataStores = new Map(), passwordStores = new Map();
 let tray;
@@ -84,17 +86,16 @@ app.on('before-quit', () => {
     const group = [...windows.values()].filter(item => item.profileId === id);
     restoredTabs.save(id, group, group.find(item => item.window.isFocused()) || group.at(-1));
   }
+  for (const data of dataStores.values()) { try { data.flush(); } catch (error) { console.error('Could not save history:', error.message); } }
   quitting = true;
 });
 let dragging = null;
 function openProfiles() { return [...new Set([...windows.values()].map((item) => item.profileId))]; }
 function publishAll() { for (const controller of windows.values()) controller.publish(); }
 const icons = new BookmarkIcons(publishAll, { renderImage: async (browsingSession, source) => {
-  const owner = [...windows.values()].find(item => !item.window.isDestroyed() && item.tabs.session === browsingSession);
-  if (!owner) return null;
-  await owner.ready;
-  const content = owner.window.webContents;
-  if (content.isDestroyed() || content.getURL() !== 'mini://app/index.html') return null;
+  await iconDecoderReady;
+  const content = iconDecoderWindow?.webContents;
+  if (!content || content.isDestroyed()) return null;
   return content.executeJavaScript(`(${rasterizeIcon.toString()})(${JSON.stringify(source)})`);
 } });
 function bookmarksFor(id) {
@@ -144,12 +145,25 @@ function windowBounds(origin, point) {
     y: Math.max(area.y, Math.min(point ? point.y - 44 : previous.y + 28, area.y + area.height - height)) };
 }
 async function createWindow(id, origin, point, empty = false) {
+  let tabSaveTimer;
+  const saveTabs = () => {
+    if (tabSaveTimer) return;
+    tabSaveTimer = setTimeout(() => {
+      tabSaveTimer = null;
+      const group = [...windows.values()].filter(item => item.profileId === id);
+      restoredTabs.save(id, group, group.find(item => item.window.isFocused()) || group.at(-1));
+    }, 900);
+    tabSaveTimer.unref?.();
+  };
   const controller = await createBrowserWindow({ profileId: id, bookmarks: bookmarksFor(id), profiles,
     data: dataFor(id), passwords: passwordsFor(id), quit: () => app.quit(),
     browsingSession: browsingSessionFor(id), hidden, dataDirectory, bounds: windowBounds(origin, point), empty,
     isBusy: () => profilesBusy, openProfiles, publishAll, access, icons, downloads,
     restore: !empty && !openProfiles().includes(id) ? restoredTabs.read(id) : null,
+    onChanged: saveTabs,
     onClosing: (item) => {
+      clearTimeout(tabSaveTimer); tabSaveTimer = null;
+      try { dataFor(id).flush(); } catch (error) { console.error('Could not save history:', error.message); }
       if (!quitting && item.tabs.items.length) restoredTabs.save(id,
         [...windows.values()].filter(other => other.profileId === id), item);
     },
@@ -193,6 +207,7 @@ async function profileCommand(source, command, id, name) {
     else if (command === 'reorder') profiles.reorder(id);
     else if (command === 'delete') {
       profiles.get(id);
+      try { dataStores.get(id)?.flush(); } catch (error) { throw new Error(`Could not save history before deleting the profile: ${error.message}`); }
       if (profiles.list().length === 1) throw new Error('Keep at least one profile.');
       const replacement = profiles.list().find((item) => item.id !== id).id;
       if (![...windows.values()].some((item) => item.profileId !== id)) {
@@ -320,6 +335,7 @@ ipcMain.on('browser:login-page', (event, info) => { const owner = pageCaller(eve
 ipcMain.on('browser:page-activity', event => {
   const item = ownerOf(event.sender);
   if (item?.tabs.active?.content === event.sender && event.senderFrame === event.sender.mainFrame && isWebUrl(event.sender.getURL())) item.pageActivity();
+  else if (item && event.sender.miniBrowserOwnerTab && event.senderFrame === event.sender.mainFrame && isWebUrl(event.sender.getURL())) event.sender.miniBrowserOwnerTab.lastUserActivation = Date.now();
 });
 
 app.whenReady().then(async () => {
@@ -327,6 +343,7 @@ app.whenReady().then(async () => {
   const assets = { '/index.html': ['index.html', 'text/html'], '/styles.css': ['styles.css', 'text/css'], '/renderer.js': ['renderer.js', 'text/javascript'] };
   protocol.handle('mini', (request) => {
     const url = new URL(request.url);
+    if (url.hostname === 'icon-decoder' && url.pathname === '/' && request.method === 'GET') return new Response('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; script-src \'none\'; object-src \'none\'; base-uri \'none\'"><title>Icon decoder</title>', { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; img-src data:; script-src 'none'; object-src 'none'; base-uri 'none'" } });
     const asset = url.hostname === 'app' && assets[url.pathname];
     if (!asset || request.method !== 'GET') return new Response('Not found', { status: 404 });
     return new Response(fs.readFileSync(path.join(__dirname, 'ui', asset[0])), { headers: {
@@ -334,7 +351,14 @@ app.whenReady().then(async () => {
       'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"
     } });
   });
+  iconDecoderWindow = new BrowserWindow({ show: false, width: 1, height: 1, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, devTools: false } });
+  iconDecoderWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  iconDecoderWindow.webContents.on('will-navigate', event => { if (event.url !== 'mini://icon-decoder/') event.preventDefault(); });
+  iconDecoderWindow.webContents.on('will-attach-webview', event => event.preventDefault());
+  iconDecoderWindow.webContents.setBackgroundThrottling(false);
+  iconDecoderReady = iconDecoderWindow.loadURL('mini://icon-decoder/');
   await (await createWindow(profiles.active().id)).ready;
+  if (profiles.notice) dialog.showErrorBox('Mini Browser data problem', profiles.notice);
   if (!hidden) {
     tray = new Tray(path.join(__dirname, '..', 'assets', 'icon.ico'));
     tray.setToolTip('Mini Browser');

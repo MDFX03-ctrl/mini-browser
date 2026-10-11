@@ -1,0 +1,13 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const source = path.join(root, '.cache', 'installer-app', 'resources', 'app.asar');
+const target = path.join(root, '.cache', 'test-app');
+if (!fs.existsSync(source)) throw new Error('Stage the current application with npm run build:installer -- --stage-only before runtime tests.');
+const runtime = path.join(root, 'node_modules', 'electron', 'dist');
+fs.mkdirSync(target, { recursive: true });
+fs.cpSync(runtime, target, { recursive: true, filter: file => path.relative(runtime, file).split(path.sep)[0] !== 'resources' });
+fs.renameSync(path.join(target, 'electron.exe'), path.join(target, 'Mini Browser.exe'));
+fs.mkdirSync(path.join(target, 'resources'), { recursive: true });
+fs.copyFileSync(source, path.join(target, 'resources', 'app.asar'));

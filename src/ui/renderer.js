@@ -8,6 +8,7 @@ const address = $('address');
 let browserState;
 let dirty = false;
 let noticeTimer;
+let focusFindPending = false;
 let currentNotice = '';
 let bookmarkSignature = '';
 let profileSignature = '';
@@ -44,7 +45,7 @@ function renderBasics(state) {
     const status = document.createElement('span'); status.className = 'download-status';
     status.textContent = download.error || (download.state === 'progressing'
       ? download.total ? `${Math.floor(download.received / download.total * 100)}% · ${Math.round(download.received / 1024)} KB / ${Math.round(download.total / 1024)} KB` : `${Math.round(download.received / 1024)} KB received`
-      : download.state === 'completed' ? 'Completed' : download.state === 'cancelled' ? 'Cancelled' : 'Download failed');
+      : download.state === 'completed' ? 'Completed' : download.state === 'cancelled' ? 'Cancelled' : download.state === 'blocked' ? 'Blocked' : 'Download failed');
     row.append(name, status);
     if (download.state === 'progressing') {
       const progress = document.createElement('progress'); progress.max = download.total || 1;
@@ -52,9 +53,9 @@ function renderBasics(state) {
       progress.setAttribute('aria-label', download.name + ' progress'); row.append(progress);
     }
     const actions = document.createElement('div'); actions.className = 'download-actions';
-    for (const [command, label] of download.state === 'completed' ? [['open', 'Open file'], ['show', 'Show in folder']] : download.cancellable ? [['cancel', 'Cancel']] : []) {
+    for (const [command, label] of download.state === 'completed' ? [['open', download.confirmationRequired ? 'This type of file can harm your computer — Open anyway' : 'Open file'], ['show', 'Show in folder']] : download.cancellable ? [['cancel', 'Cancel']] : []) {
       const button = document.createElement('button'); button.className = 'text-button'; button.textContent = label;
-      button.addEventListener('click', async () => { const result = await window.miniBrowser.download(command, download.id); if (!result.ok) showNotice(result.error); });
+      button.addEventListener('click', async () => { const result = await window.miniBrowser.download(command, download.id); if (result.confirmationRequired) { download.confirmationRequired = true; downloadsSignature = ''; renderBasics(browserState); } else if (!result.ok) showNotice(result.error); });
       actions.append(button);
     }
     row.append(actions); list.append(row);
@@ -447,10 +448,17 @@ function render(state) {
     closeBookmarkForm();
   }
   browserState = state;
-  const siteIcon = state.tabs.find(tab => tab.id === state.activeTabId)?.icon;
-  $('site-favicon').hidden = !siteIcon;
-  if (siteIcon && $('site-favicon').getAttribute('src') !== siteIcon) $('site-favicon').src = siteIcon;
-  $('site-permissions').querySelector('svg').hidden = !!siteIcon;
+  let insecure = false;
+  try {
+    const address = new URL(state.url);
+    const host = address.hostname.toLowerCase();
+    const local = host === 'localhost' || host.endsWith('.localhost') || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
+    insecure = address.protocol === 'http:' && !local;
+  } catch {}
+  $('site-permissions').querySelector('svg').hidden = false;
+  $('site-permissions').querySelector('svg use').setAttribute('href', insecure ? '#warning' : '#globe');
+  $('site-permissions').title = insecure ? 'Not secure — Site permissions' : 'Site permissions';
+  $('site-permissions').setAttribute('aria-label', insecure ? 'Not secure. Site permissions' : 'Site permissions');
   if (document.activeElement !== address || !dirty) address.value = state.url;
   $('back').disabled = !state.canGoBack;
   $('forward').disabled = !state.canGoForward;
@@ -474,6 +482,7 @@ function render(state) {
   renderTabs(state);
   renderAccess(state);
   renderBasics(state);
+  if (focusFindPending && state.find.open && state.overlay === 'find') { focusFindPending = false; $('find-text').focus(); $('find-text').select(); }
   renderExtras(state);
   if (IS_OVERLAY) requestAnimationFrame(measureOverlay);
   $('chrome').hidden = !state.chromeVisible;
@@ -613,7 +622,10 @@ document.addEventListener('keydown', (event) => {
 });
 window.miniBrowser.onState(render);
 window.miniBrowser.onFocusAddress(focusAddress);
-window.miniBrowser.onFocusFind(() => { $('find-text').focus(); $('find-text').select(); });
+window.miniBrowser.onFocusFind(() => {
+  focusFindPending = true;
+  if (browserState?.find.open && browserState.overlay === 'find') { focusFindPending = false; $('find-text').focus(); $('find-text').select(); }
+});
 $('find-text').addEventListener('input', () => window.miniBrowser.find('text', $('find-text').value));
 $('find-bar').addEventListener('submit', event => { event.preventDefault(); window.miniBrowser.find('next'); });
 $('find-text').addEventListener('keydown', event => {
@@ -687,10 +699,12 @@ function renderExtras(state) {
       if (state.overlay === 'fill') row.append(button('Fill', () => window.miniBrowser.password('fill', item.id), 'primary-button'));
       else {
         row.append(button('Show', async () => {
+          if (!window.confirm('Show this saved password?')) return { ok: false };
           const result = await window.miniBrowser.password('show', item.id);
           if (result.ok) { let field = row.querySelector('input'); if (!field) { field = document.createElement('input'); field.readOnly = true; field.setAttribute('aria-label', 'Saved password'); row.append(field); } field.value = result.password; }
           return result;
-        }), button('Copy', () => window.miniBrowser.password('copy', item.id)), button('Delete', () => window.miniBrowser.password('delete', item.id)));
+        }), button('Copy', () => window.confirm('Copy this saved password to the clipboard?')
+          ? window.miniBrowser.password('copy', item.id) : Promise.resolve({ ok: false })), button('Delete', () => window.miniBrowser.password('delete', item.id)));
       }
     }
     list.append(row);

@@ -6,7 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(source.startsWith(root + path.sep));
 const fixture = path.join(root, '.cache', `basics-${randomUUID().slice(0, 8)}`);
 const temp = path.join(root, '.cache', 'tmp');
@@ -66,7 +66,7 @@ async function profileWindow(id) {
   let result;
   await poll(async () => {
     result = await application.evaluate(async ({ BrowserWindow }, id) => {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')) {
         const state = await win.webContents.executeJavaScript('window.miniBrowser?.getState()');
         if (state?.activeProfile.id === id) return win.id;
       }
@@ -107,13 +107,13 @@ async function run() {
     const factors = await application.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id).contentView.children.filter(view => !view.browserChrome).map(view => view.webContents.getZoomFactor()), shell.id);
     assert.deepEqual(factors, [1, 1.1], 'same-origin tabs have independent zoom');
     for (let index = 0; index < 20; index++) await call('zoom', 'in');
-    assert.equal((await state()).zoomPercent, 300);
+    await poll(async () => (await state()).zoomPercent === 300, 'zoom limit publishes');
     for (let index = 0; index < 25; index++) await call('zoom', 'out');
-    assert.equal((await state()).zoomPercent, 50);
+    await poll(async () => (await state()).zoomPercent === 50, 'zoom limit publishes');
     await key('0', ['control']); await poll(async () => (await state()).zoomPercent === 100, 'Ctrl+0');
     await key('-', ['control']); await poll(async () => (await state()).zoomPercent === 90, 'Ctrl+Minus');
-    await call('selectTab', firstTab); assert.equal((await state()).zoomPercent, 100);
-    await call('selectTab', secondTab); assert.equal((await state()).zoomPercent, 90);
+    await call('selectTab', firstTab); await poll(async () => (await state()).activeTabId === firstTab && (await state()).zoomPercent === 100, 'first tab zoom');
+    await call('selectTab', secondTab); await poll(async () => (await state()).activeTabId === secondTab && (await state()).zoomPercent === 90, 'second tab zoom');
     console.log('PASS: tab-only same-origin zoom, Ctrl+Plus/Minus/0, and 50–300% limits');
     await call('zoom', 'reset');
 
@@ -129,10 +129,11 @@ async function run() {
     for (const label of ['Reload', 'Copy link', 'Open in new tab', 'Download link']) assert.ok(labels.includes(label), `Missing ${label}: ${labels}`);
     await application.evaluate(() => global.basicsMenu.items.find(item => item.label === 'Open in new tab').click());
     await poll(async () => (await state()).tabs.length === 3 && (await state()).url === base + '/linked' && !(await state()).loading, 'context menu opens link tab');
-    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length), 1);
     console.log('PASS: context-menu params produce link actions; Open in new tab keeps the same profile/window');
 
     fs.writeFileSync(path.join(downloads, 'sample.txt'), 'keep existing');
+    await key('Shift');
     await page("location.href='/download';");
     await poll(async () => (await state()).downloads.some(item => item.state === 'completed'), 'download completes');
     const completed = (await state()).downloads[0];
@@ -163,6 +164,7 @@ async function run() {
 
     await call('selectTab', secondTab);
     await call('createProfile', 'Work');
+    await poll(async () => (await state()).profiles.length === 2, 'work profile publishes');
     const workId = (await state()).profiles.find(profile => profile.id !== 'default').id;
     shell = await profileWindow(workId);
     assert.equal((await state()).mode, 'welcome'); assert.deepEqual((await state()).downloads, []);

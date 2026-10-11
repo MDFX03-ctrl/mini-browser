@@ -16,13 +16,31 @@ test('history, closed tabs, bookmark suggestions and preferences persist separat
   a.visit('https://example.com/first', 'First history'); a.visit('https://example.com/second', 'Second history');
   a.remember({ url: 'https://example.com/first', pinned: true, content: { isAudioMuted: () => true } });
   a.bookmarkBar(false);
+  a.flush();
   const restarted = new ProfileData(path.join(root, 'a'));
   assert.equal(restarted.entries.length, 2); assert.equal(b.entries.length, 0); assert.equal(restarted.preferences.bookmarkBar, false);
   assert.deepEqual(restarted.reopen(), { url: 'https://example.com/first', pinned: true, muted: true }); assert.equal(restarted.reopen(), undefined);
   const suggestions = restarted.suggest('first', [{ url: 'https://example.com/first', title: 'First bookmark' }]);
   assert.equal(suggestions.length, 1); assert.equal(suggestions[0].source, 'bookmark');
   assert.equal(restarted.suggest('second', [])[0].source, 'history'); assert.deepEqual(restarted.suggest('unknown', []), []);
-  restarted.clear(); assert.equal(new ProfileData(path.join(root, 'a')).entries.length, 0);
+  restarted.clear(); restarted.flush(); assert.equal(new ProfileData(path.join(root, 'a')).entries.length, 0);
+});
+test('history writes are debounced and corrupt stores fall back without overwriting originals', t => {
+  const root = fixture(t), directory = path.join(root, 'history'); fs.mkdirSync(directory);
+  const history = new ProfileData(directory);
+  history.visit('https://example.com/', 'Example');
+  assert.equal(fs.existsSync(path.join(directory, 'history.json')), false);
+  history.flush(); assert.equal(JSON.parse(fs.readFileSync(path.join(directory, 'history.json'))).entries.length, 1);
+  const pending = history.visit('https://example.com/b', 'B') || history.timer;
+  history.title('https://example.com/b', 'B 1'); history.title('https://example.com/b', 'B 2');
+  assert.equal(history.timer, pending, 'frequent title changes keep the pending write instead of postponing it');
+  history.flush();
+  const broken = path.join(root, 'broken'); fs.mkdirSync(broken);
+  fs.writeFileSync(path.join(broken, 'history.json'), '{broken');
+  fs.writeFileSync(path.join(broken, 'preferences.json'), '{broken');
+  const safe = new ProfileData(broken); safe.visit('https://example.org/'); safe.bookmarkBar(false); safe.flush();
+  assert.equal(safe.entries.length, 1); assert.equal(fs.readFileSync(path.join(broken, 'history.json'), 'utf8'), '{broken');
+  assert.equal(fs.readFileSync(path.join(broken, 'preferences.json'), 'utf8'), '{broken');
 });
 test('passwords require encryption, never store plaintext, and stay in their profile', t => {
   const root = fixture(t);
@@ -36,6 +54,12 @@ test('passwords require encryption, never store plaintext, and stay in their pro
   assert.throws(() => a.save('http://example.com', 'alice', 'secret'));
   assert.throws(() => new PasswordStore(path.join(root, 'c'), { isEncryptionAvailable: () => false }).save('https://example.com', 'a', 'secret'));
   a.delete(entry.id); assert.equal(a.list().length, 0);
+});
+test('corrupt passwords fall back read-only and preserve the source', t => {
+  const dir = fixture(t); fs.writeFileSync(path.join(dir, 'passwords.json'), '{broken');
+  const store = new PasswordStore(dir, { isEncryptionAvailable: () => true });
+  assert.equal(store.list().length, 0); assert.throws(() => store.clear(), /original file is unchanged/);
+  assert.equal(fs.readFileSync(store.file, 'utf8'), '{broken');
 });
 test('tab restore preserves active, pinned and muted tabs only inside their profile', t => {
   const root = fixture(t), restore = new TabRestore({ bookmarkDirectory: id => path.join(root, id) });
