@@ -110,3 +110,5 @@ main { height:calc(100vh - var(--chrome-height));overflow:auto; } .welcome { min
 #profile-error,#bookmark-error,#clear-error { color:#b3261e;font-size:12px; }
 @media(max-width:400px) { .toolbar { gap:2px;padding-inline:4px; } .navigation .icon-button { width:28px; } .profile-toggle { width:28px;height:28px; } .address-wrap .icon-button { width:24px; } .caption { min-width:96px; } .window-button { width:32px; } .tab-card { flex-basis:80px; } }
 @media(prefers-reduced-motion:reduce) { .loading { animation:none;width:100%; } }
+#update-restart { font-weight:600;color:#1f6b43; } #menu-toggle.update-ready { position:relative; }
+#menu-toggle.update-ready::after { content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#2f8f5b; }

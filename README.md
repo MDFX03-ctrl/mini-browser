@@ -67,6 +67,14 @@ Drag a tab within its strip to reorder it, outside the window to detach it into 
 
 To add a profile picture, open the profile picker and click that profile's initial or existing photo. Choose a PNG, JPEG, or WebP image (up to 10 MB). The browser crops it to a square and saves a small 128-pixel local copy; the original file stays unchanged. Click the small × on the photo to return to initials. Each profile keeps its own picture across restarts.
 
+## Updates and signing
+
+The installed edition checks the GitHub Releases of the repository named in `package.json` (`release.githubOwner`/`release.githubRepo`) 15 seconds after start and every 4 hours. It downloads a newer version quietly and installs it when you quit; the three-dot menu and the tray menu then offer **Restart to update**. It accepts an update only when Windows reports a valid signature from `release.publisherName`, so a release that is unsigned or signed by anyone else is refused even if it appears on the release page. The portable edition and test mode never update themselves.
+
+Builds are signed with a self-made code-signing certificate from the current Windows user's certificate store, chosen by `release.certificateThumbprint` (or the `MINI_BROWSER_SIGN_THUMBPRINT` environment variable). Windows trusts it only on PCs where its public part has been added to the user's Trusted Root and Trusted Publishers stores, so this setup suits personal use. Signing uses PowerShell's `Set-AuthenticodeSignature` with a DigiCert timestamp; the private key never leaves the store. When updates are configured, `npm run build:installer` refuses to build without the certificate. Keep a password-protected backup of the certificate: a release signed with a different certificate is refused by existing installations, which then need one manual reinstall.
+
+To publish a version: raise `version` in `package.json`, run `npm run build:installer`, then create a GitHub release with the tag `v<version>` and upload both `dist/Mini-Browser-Setup-<version>-x64.exe` and `dist/latest.yml`. Publish it as a full release, not a draft or pre-release.
+
 ## Profiles and local data
 
 The app stores profile names, optional picture thumbnails, stable ids, the last active id, and pending deletion cleanup in `profiles.json` in its user-data directory. The first profile is **Default**: it retains the existing `persist:pages` partition and root `bookmarks.json`, so upgrading preserves existing cookies and bookmarks. New profiles use unique `persist:profile-<id>` partitions and `profiles/<id>/bookmarks.json`.

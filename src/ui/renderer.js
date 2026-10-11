@@ -25,6 +25,9 @@ let pictureProfileId = null;
 let bookmarkEditSignature = '';
 
 function renderBasics(state) {
+  $('update-restart').hidden = !state.updateReady;
+  if (state.updateReady) $('update-restart').textContent = `Restart to update to ${state.updateReady}`;
+  $('menu-toggle').classList.toggle('update-ready', !!state.updateReady);
   $('fullscreen-notice').hidden = !IS_OVERLAY || !state.fullscreenNotice || !!state.overlay;
   $('find-bar').hidden = !state.find.open || state.overlay !== 'find';
   if (document.activeElement !== $('find-text')) $('find-text').value = state.find.text;
@@ -622,6 +625,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !$('profile-panel').hidden) setProfilePanel(false);
 });
 window.miniBrowser.onState(render);
+$('update-restart').addEventListener('click', () => window.miniBrowser.installUpdate());
 window.miniBrowser.onFocusAddress(focusAddress);
 window.miniBrowser.onFocusFind(() => {
   focusFindPending = true;

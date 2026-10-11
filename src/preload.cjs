@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('miniBrowser', Object.freeze({
   minimize: () => ipcRenderer.invoke('browser:action', 'minimize'),
   maximize: () => ipcRenderer.invoke('browser:action', 'maximize'),
   close: () => ipcRenderer.invoke('browser:action', 'close'),
+  installUpdate: () => ipcRenderer.invoke('browser:action', 'install-update'),
   newTab: () => ipcRenderer.invoke('browser:tab', 'new'),
   tab: (command, id) => ipcRenderer.invoke('browser:tab', command, id),
   ui: (command, value) => ipcRenderer.invoke('browser:ui', command, value),

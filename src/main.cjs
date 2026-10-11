@@ -12,6 +12,7 @@ const { Downloads } = require('./downloads.cjs');
 const { TabRestore } = require('./tab-restore.cjs');
 const { ProfileData } = require('./profile-data.cjs');
 const { PasswordStore, loginOrigin } = require('./passwords.cjs');
+const { startUpdates } = require('./updates.cjs');
 const { isWebUrl } = require('./navigation.cjs');
 
 app.setName('Mini Browser');
@@ -75,7 +76,7 @@ const windows = new Map();
 let iconDecoderWindow, iconDecoderReady;
 const bookmarkStores = new Map();
 const dataStores = new Map(), passwordStores = new Map();
-let tray;
+let tray, updater = null;
 function dataFor(id) {
   if (!dataStores.has(id)) dataStores.set(id, new ProfileData(profiles.bookmarkDirectory(id)));
   return dataStores.get(id);
@@ -166,6 +167,7 @@ async function createWindow(id, origin, point, empty = false) {
     data: dataFor(id), passwords: passwordsFor(id), quit: () => app.quit(),
     browsingSession: browsingSessionFor(id), hidden, dataDirectory, bounds: windowBounds(origin, point), empty,
     isBusy: () => profilesBusy, openProfiles, publishAll, access, icons, downloads,
+    updateReady: () => updater?.ready || null, installUpdate: () => updater?.install(),
     restore: !empty && !openProfiles().includes(id) ? restoredTabs.read(id) : null,
     onChanged: saveTabs,
     onClosing: (item) => {
@@ -375,8 +377,12 @@ app.whenReady().then(async () => {
       if (current) { current.window.restore(); current.window.show(); current.window.focus(); }
       else await (await createWindow(profiles.active().id)).ready;
     };
-    tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Mini Browser', click: () => reopen().catch(console.error) }, { type: 'separator' }, { label: 'Exit', click: () => app.quit() }]));
+    const trayMenu = () => tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Mini Browser', click: () => reopen().catch(console.error) },
+      ...(updater?.ready ? [{ label: `Restart to update to ${updater.ready}`, click: () => updater.install() }] : []),
+      { type: 'separator' }, { label: 'Exit', click: () => app.quit() }]));
+    trayMenu();
     tray.on('double-click', () => reopen().catch(console.error));
+    updater = startUpdates({ installed, testing: hidden, changed: () => { publishAll(); trayMenu(); } });
   }
 }).catch((error) => { console.error(error); app.quit(); });
 app.on('window-all-closed', () => {});

@@ -7,7 +7,7 @@ const { BrowserTabs } = require('./tabs.cjs');
 const { loginOrigin } = require('./passwords.cjs');
 
 async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSession, hidden,
-  bounds, dataDirectory, data, passwords, quit, isBusy, openProfiles, publishAll, access, icons, downloads, restore, onClosing, onCreated, onClosed, onFocused, onChanged, empty = false }) {
+  bounds, dataDirectory, data, passwords, quit, isBusy, openProfiles, publishAll, access, icons, downloads, restore, onClosing, onCreated, onClosed, onFocused, onChanged, updateReady = () => null, installUpdate = () => {}, empty = false }) {
   const SHELL_URL = 'mini://app/index.html';
   const chromeHeight = () => 88 + (data.preferences.bookmarkBar && bookmarks.list().length ? 32 : 0);
   let window;
@@ -95,7 +95,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       history: overlay === 'history' ? data.entries.slice(0, 500) : [],
       passwords: overlay === 'passwords' ? passwords.list() : [], passwordOffer: tab.passwordOffer || [],
       passwordPrompt: tab.passwordPrompt ? { origin: tab.passwordPrompt.origin, username: tab.passwordPrompt.username } : null,
-      canReopen: data.closed.length > 0,
+      canReopen: data.closed.length > 0, updateReady: updateReady(),
       ...access.state(controller), panelHeight: pushOpen() ? panelHeight : 0
     };
     layout();
@@ -248,6 +248,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       case 'maximize': window.isMaximized() ? window.unmaximize() : window.maximize(); break;
       case 'close': window.close(); return state;
       case 'exit': quit(); return state;
+      case 'install-update': installUpdate(); return state;
       case 'print': if (tab.mode === 'page') content.print({ silent: false }, (success, reason) => { if (!success && reason && !/cancel/i.test(reason)) { tab.notice = reason; publish(); } }); break;
       default: throw new Error('Unknown browser action.');
     }

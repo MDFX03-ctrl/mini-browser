@@ -66,18 +66,22 @@ async function verify() {
   const archive = path.join(application, 'resources', 'app.asar');
   for (const relativeFile of [
     ['src', 'main.cjs'], ['src', 'browser-window.cjs'], ['src', 'ordering.cjs'], ['src', 'tabs.cjs'], ['src', 'navigation.cjs'], ['src', 'bookmarks.cjs'], ['src', 'profiles.cjs'],
-    ['src', 'bookmark-icons.cjs'], ['src', 'icon-decoder.cjs'], ['src', 'page-compatibility.cjs'], ['src', 'permissions.cjs'], ['src', 'downloads.cjs'], ['src', 'download-policy.cjs'], ['src', 'page-menu.cjs'], ['src', 'tab-restore.cjs'], ['src', 'profile-data.cjs'], ['src', 'passwords.cjs'], ['src', 'page-preload.cjs'], ['src', 'preload.cjs'], ['src', 'ui', 'renderer.js'], ['src', 'ui', 'index.html'], ['src', 'ui', 'styles.css']
+    ['src', 'bookmark-icons.cjs'], ['src', 'icon-decoder.cjs'], ['src', 'page-compatibility.cjs'], ['src', 'permissions.cjs'], ['src', 'downloads.cjs'], ['src', 'download-policy.cjs'], ['src', 'updates.cjs'], ['src', 'page-menu.cjs'], ['src', 'tab-restore.cjs'], ['src', 'profile-data.cjs'], ['src', 'passwords.cjs'], ['src', 'page-preload.cjs'], ['src', 'preload.cjs'], ['src', 'ui', 'renderer.js'], ['src', 'ui', 'index.html'], ['src', 'ui', 'styles.css']
   ]) {
     const file = path.join(...relativeFile);
     assert.deepEqual(extractFile(archive, file), fs.readFileSync(path.join(root, file)));
   }
   assert.equal(JSON.parse(extractFile(archive, 'package.json').toString()).version, version);
+  assert.equal(JSON.parse(extractFile(archive, path.join('node_modules', 'electron-updater', 'package.json')).toString()).version, require('../package.json').dependencies['electron-updater'], 'Updater is bundled');
+  const { releaseConfig } = require('../scripts/release-config.cjs');
+  const release = releaseConfig(require('../package.json'));
+  assert.equal(fs.existsSync(path.join(application, 'resources', 'app-update.yml')), !!(release.updates && release.signing), 'Update feed only in signed, configured builds');
   const { getCurrentFuseWire, FuseV1Options } = require('@electron/fuses');
   const { FuseState } = require('@electron/fuses/dist/constants');
   const wire = await getCurrentFuseWire(path.join(application, 'Mini Browser.exe'));
   for (const option of [FuseV1Options.RunAsNode, FuseV1Options.EnableNodeOptionsEnvironmentVariable, FuseV1Options.EnableNodeCliInspectArguments, FuseV1Options.EnableEmbeddedAsarIntegrityValidation]) assert.equal(wire[option], FuseState.DISABLE);
   assert.equal(wire[FuseV1Options.OnlyLoadAppFromAsar], FuseState.ENABLE);
-  console.log('PASS: ' + (staged ? 'staged application' : 'Windows setup archive') + ', x64 payload, 22 current source files, metadata, no browsing data and five fuse settings');
+  console.log('PASS: ' + (staged ? 'staged application' : 'Windows setup archive') + ', x64 payload, 23 current source files, bundled updater, update settings, metadata, no browsing data and five fuse settings');
   console.log(`Extracted application for runtime tests: ${path.join(application, 'Mini Browser.exe')}`);
 }
 verify().catch((error) => { console.error(error); process.exitCode = 1; });

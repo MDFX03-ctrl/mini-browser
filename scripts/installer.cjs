@@ -2,6 +2,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { releaseConfig, appUpdateYaml } = require('./release-config.cjs');
+const { signFile } = require('./sign.cjs');
 const root = path.resolve(__dirname, '..');
 const cache = path.join(root, '.cache');
 const temp = path.join(cache, 'tmp');
@@ -61,7 +63,20 @@ async function buildInstaller() {
   for (const directory of ['src', 'assets']) {
     fs.cpSync(path.join(root, directory), path.join(source, directory), { recursive: true });
   }
+  // Runtime dependencies (the updater) go into the archive with the application code.
+  const listed = require('node:child_process').execSync('npm ls --omit=dev --all --parseable', { cwd: root, encoding: 'utf8' })
+    .split(/\r?\n/).filter(Boolean).slice(1);
+  for (const directory of listed) {
+    const relative = path.relative(root, directory);
+    if (!relative.startsWith('node_modules' + path.sep)) throw new Error(`Unexpected dependency location: ${directory}`);
+    fs.cpSync(directory, path.join(source, relative), { recursive: true });
+  }
   const metadata = require('../package.json');
+  const release = releaseConfig(metadata);
+  const stageOnly = process.argv.includes('--stage-only');
+  if (!stageOnly && release.updates && !release.signing) {
+    throw new Error('Automatic updates are configured, so the installer must be signed. Set release.certificateThumbprint in package.json.');
+  }
   {
     const { resedit } = await import('@electron/packager/resedit');
     await resedit(path.join(stage, 'Mini Browser.exe'), {
@@ -80,23 +95,31 @@ async function buildInstaller() {
   await createPackage(source, path.join(resources, 'app.asar'));
   await require('./fuses.cjs')(path.join(stage, 'Mini Browser.exe'));
   fs.writeFileSync(path.join(resources, 'installed.flag'), 'Mini Browser installer edition\n');
-  if (process.argv.includes('--stage-only')) {
+  if (release.updates && release.signing) fs.writeFileSync(path.join(resources, 'app-update.yml'), appUpdateYaml(release));
+  // Signed last: any later change to the executable would invalidate its signature.
+  if (release.signing) signFile(path.join(stage, 'Mini Browser.exe'), release.signing.thumbprint);
+  if (stageOnly) {
     console.log(`Staged application: ${path.join(stage, 'Mini Browser.exe')}`);
     return;
   }
 
   const { build, Platform, Arch } = require('electron-builder');
   const artifacts = await build({
-    projectDir: root, prepackaged: stage,
+    projectDir: root, prepackaged: stage, publish: 'never',
     targets: Platform.WINDOWS.createTarget('nsis', Arch.x64),
     config: {
       appId: 'local.mini-browser', productName: 'Mini Browser',
       electronVersion: metadata.devDependencies.electron,
       directories: { output, buildResources: path.join(root, 'assets') },
-      compression: 'normal', publish: null,
+      // The GitHub publish target only produces latest.yml here; uploading stays a manual step.
+      compression: 'normal', publish: release.updates ? [{ provider: 'github', ...release.updates }] : null,
       win: {
         icon: path.join(root, 'assets', 'icon.ico'),
-        executableName: 'Mini Browser', signAndEditExecutable: false
+        executableName: 'Mini Browser', signAndEditExecutable: false,
+        ...(release.signing ? { signtoolOptions: {
+          sign: configuration => signFile(configuration.path, release.signing.thumbprint),
+          signingHashAlgorithms: ['sha256'], publisherName: release.signing.publisherName
+        } } : {})
       },
       nsis: {
         oneClick: false, perMachine: false, allowElevation: false,
@@ -118,6 +141,12 @@ async function buildInstaller() {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.copyFileSync(projectPath(installers[0]), destination);
   console.log(`Windows installer: ${destination}`);
+  if (release.updates) {
+    const feed = path.join(output, 'latest.yml');
+    if (!fs.existsSync(feed)) throw new Error('The update feed latest.yml was not produced.');
+    fs.copyFileSync(projectPath(feed), path.join(root, 'dist', 'latest.yml'));
+    console.log(`Update feed: ${path.join(root, 'dist', 'latest.yml')} (upload it with the installer to the GitHub release)`);
+  }
 }
 
 buildInstaller().catch((error) => { console.error(error); process.exitCode = 1; });
