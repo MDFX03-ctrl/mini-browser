@@ -34,7 +34,7 @@
   },
   "release": {
     "githubOwner": "MDFX03-ctrl",
-    "githubRepo": "MiniBrowser",
+    "githubRepo": "mini-browser",
     "publisherName": "CN=MDFX03 Mini Browser",
     "certificateThumbprint": ""
   }
