@@ -1,4 +1,4 @@
-MINI BROWSER 1.7.4 - PORTABLE WINDOWS x64
+MINI BROWSER 1.7.5 - PORTABLE WINDOWS x64
 
 GET STARTED
 Extract the ZIP, then double-click Mini Browser.exe.

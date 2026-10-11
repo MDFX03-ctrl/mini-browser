@@ -1,7 +1,7 @@
 {
   "name": "mini-browser",
   "productName": "Mini Browser",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "A small, resizable floating browser for Windows.",
   "private": true,
   "main": "src/main.cjs",
