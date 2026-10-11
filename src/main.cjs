@@ -17,7 +17,14 @@ const { isWebUrl } = require('./navigation.cjs');
 app.setName('Mini Browser');
 const root = app.isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '..');
 const installed = app.isPackaged && fs.existsSync(path.join(process.resourcesPath, 'installed.flag'));
-const testEnabled = process.env.MINI_BROWSER_TEST === '1' && !(app.isPackaged && installed);
+// Test automation must never reach a real installed profile: refuse to start rather than
+// silently falling back to the user's data directory.
+if (installed && process.env.MINI_BROWSER_TEST === '1') {
+  console.error('MINI_BROWSER_TEST is not supported by the installed edition.');
+  app.exit(1);
+  return;
+}
+const testEnabled = process.env.MINI_BROWSER_TEST === '1';
 const testProfile = testEnabled
   && /^[a-f\d-]{36}$/i.test(process.env.MINI_BROWSER_TEST_PROFILE || '')
   ? path.join(root, '.mini-browser', 'tests', process.env.MINI_BROWSER_TEST_PROFILE) : null;

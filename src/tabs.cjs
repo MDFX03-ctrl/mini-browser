@@ -317,7 +317,7 @@ class BrowserTabs {
       if (input.type === 'mouseDown' || input.type === 'keyDown' || input.type === 'touchStart') tab.lastUserActivation = Date.now();
       if (tab.owner.active === tab) tab.owner.keyboard(event, input);
     });
-    listen('enter-html-full-screen', () => { notice('Press Esc to exit full screen.'); tab.owner.fullscreen(tab, true); });
+    listen('enter-html-full-screen', () => tab.owner.fullscreen(tab, true));
     listen('leave-html-full-screen', () => tab.owner.fullscreen(tab, false));
   }
 }
