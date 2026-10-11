@@ -300,9 +300,10 @@ function handle(channel, callback) {
     const source = caller(event);
     try { return await callback(source, ...args); }
     catch (error) { return { ok: false, error: error.message }; }
+    finally { for (const controller of windows.values()) controller.flush(); }
   });
 }
-handle('state', (item) => item.state);
+handle('state', (item) => { item.flush(); return item.state; });
 handle('navigate', (item, address) => item.navigate(address));
 handle('action', (item, command) => item.action(command));
 handle('tab', (item, command, id) => item.tabCommand(command, id));

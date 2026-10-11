@@ -70,6 +70,8 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     publishTimer = setTimeout(() => { publishTimer = null; publishNow(); }, 24);
     publishTimer.unref?.();
   }
+  // UI actions get their resulting state before their reply, as when publishing was synchronous.
+  function flush() { if (!publishTimer) return; clearTimeout(publishTimer); publishTimer = null; publishNow(); }
   function publishNow() {
     if (!window || window.isDestroyed() || !tabs?.active) return;
     const tab = tabs.active;
@@ -432,7 +434,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
 
   const controller = {
     profileId, get window() { return window; }, get tabs() { return tabs; }, get state() { return state; },
-    publish, action, tabCommand, exitVideo, busy, find, zoom, ui, suggest, password, clearData, loginPage,
+    publish, flush, action, tabCommand, exitVideo, busy, find, zoom, ui, suggest, password, clearData, loginPage,
     get overlayContent() { return overlayView?.webContents; },
     resetPrivateData(choices) {
       for (const tab of tabs.items) { tab.loginCandidate = null; tab.passwordPrompt = null; if (choices.passwords) tab.passwordOffer = []; }

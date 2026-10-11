@@ -1,11 +1,12 @@
 'use strict';
+require('../scripts/test-runtime.cjs');
 const { _electron: electron } = require('playwright-core');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const executablePath = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(executablePath.startsWith(root + path.sep));
 const temp = path.join(root, '.cache', 'tmp'); fs.mkdirSync(temp, { recursive: true });
 const env = { ...process.env, MINI_BROWSER_TEST: '1', MINI_BROWSER_TEST_PROFILE: randomUUID(), TEMP: temp, TMP: temp };
@@ -17,7 +18,7 @@ async function run() {
     for (let attempts = 0; !application.windows().some(page => page.url() === 'mini://app/index.html'); attempts++) { if (attempts > 200) throw new Error('Shell did not load'); await new Promise(resolve => setTimeout(resolve, 100)); }
     const shell = application.windows().find(page => page.url() === 'mini://app/index.html');
     await shell.waitForURL('mini://app/index.html');
-    const originalId = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);
+    const originalId = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(win => win.webContents.getURL() !== 'mini://icon-decoder/').id);
     await application.evaluate(({ BrowserWindow }, id) => { BrowserWindow.fromId(id).show(); BrowserWindow.fromId(id).focus(); }, originalId);
     await shell.evaluate(() => window.miniBrowser.createProfile('Work'));
     await application.evaluate(({ BrowserWindow }, id) => { const win=BrowserWindow.fromId(id);win.show();win.focus(); }, originalId);
@@ -141,7 +142,7 @@ async function run() {
     await shell.waitForFunction(() => document.body.classList.contains('tab-dragging'));
     await shell.mouse.up();
     await shell.waitForFunction(id => window.miniBrowser.getState().then(s => !s.tabs.some(t => t.id === id)), moving);
-    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 3);
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length), 3);
     console.log('PASS: tab pointer capture, drag threshold, and release create a separate same-profile window');
     const data = await application.evaluate(({ app }) => app.getPath('userData'));
     assert.equal(fs.existsSync(path.join(data, 'profiles.json')), false);

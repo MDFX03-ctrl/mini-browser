@@ -8,7 +8,7 @@ const { randomUUID } = require('node:crypto');
 const { BookmarkStore } = require('../src/bookmarks.cjs');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'installer-app', 'Mini Browser.exe'));
+const source = fs.realpathSync(process.argv[2] || path.join(root, '.cache', 'test-app', 'Mini Browser.exe'));
 assert.ok(source.startsWith(root + path.sep), 'Only test project-local builds');
 const fixture = path.join(root, '.cache', `p-${randomUUID().slice(0, 8)}`);
 const temp = path.join(root, '.cache', 'tmp');
@@ -88,7 +88,7 @@ async function launch() {
   await poll(async () => !!(await state()).activeProfile, 'shell ready');
   const downloadDirectory = path.join(fixture, 'downloads'); fs.mkdirSync(downloadDirectory, { recursive: true });
   await application.evaluate(({ app }, directory) => app.setPath('downloads', directory), downloadDirectory);
-  await poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), 'app window is shown');
+  await poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(win => win.webContents.getURL() !== 'mini://icon-decoder/').isVisible()), 'app window is shown');
   assert.equal(await application.evaluate(({ app }) => app.getPath('userData')), data);
 }
 async function navigate(url) {
@@ -159,7 +159,7 @@ async function windowFor(profileId, exclude = []) {
   let id;
   await poll(async () => {
     id = await application.evaluate(async ({ BrowserWindow }, { profileId, exclude }) => {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/')) {
         if (exclude.includes(win.id) || win.webContents.getURL() !== 'mini://app/index.html') continue;
         const state = await win.webContents.executeJavaScript('window.miniBrowser?.getState()');
         if (state?.activeProfile?.id === profileId) return win.id;
@@ -169,7 +169,7 @@ async function windowFor(profileId, exclude = []) {
   }, 'profile window');
   return application.window(id);
 }
-const count = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+const count = () => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.webContents.getURL() !== 'mini://icon-decoder/').length);
 async function details(target = shell) {
   return application.evaluate(({ BrowserWindow }, id) => {
     const win = BrowserWindow.fromId(id);
