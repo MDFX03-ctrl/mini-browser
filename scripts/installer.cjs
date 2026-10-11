@@ -75,7 +75,7 @@ async function buildInstaller() {
   const release = releaseConfig(metadata);
   const stageOnly = process.argv.includes('--stage-only');
   if (!stageOnly && release.updates && !release.signing) {
-    throw new Error('Automatic updates are configured, so the installer must be signed. Set release.certificateThumbprint in package.json.');
+    throw new Error('Automatic updates are configured, so the installer must be signed. See SIGNING.md: set MINI_BROWSER_SIGN_THUMBPRINT or release.certificateThumbprint.');
   }
   {
     const { resedit } = await import('@electron/packager/resedit');
