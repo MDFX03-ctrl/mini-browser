@@ -1,7 +1,7 @@
 {
   "name": "mini-browser",
   "productName": "Mini Browser",
-  "version": "1.7.5",
+  "version": "1.8.0",
   "description": "A small, resizable floating browser for Windows.",
   "private": true,
   "main": "src/main.cjs",
@@ -33,8 +33,8 @@
     "electron-updater": "6.8.9"
   },
   "release": {
-    "githubOwner": "",
-    "githubRepo": "mini-browser",
+    "githubOwner": "MDFX03-ctrl",
+    "githubRepo": "MiniBrowser",
     "publisherName": "CN=MDFX03 Mini Browser",
     "certificateThumbprint": ""
   }

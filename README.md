@@ -4,7 +4,7 @@ A small Windows browser that stays out of your way. Resize it from any edge, mov
 
 ## Open the browser
 
-For a normal Windows installation, run **[Mini-Browser-Setup-1.7.5-x64.exe](dist/Mini-Browser-Setup-1.7.5-x64.exe)**. The setup wizard lets you choose a folder and creates desktop and Start menu shortcuts. Install it for your Windows account; administrator access is not required. Run the new installer to update an existing installation. Remove it through Windows Settings > Apps when needed.
+For a normal Windows installation, run **[Mini-Browser-Setup-1.8.0-x64.exe](dist/Mini-Browser-Setup-1.8.0-x64.exe)**. The setup wizard lets you choose a folder and creates desktop and Start menu shortcuts. Install it for your Windows account; administrator access is not required. Run the new installer to update an existing installation. Remove it through Windows Settings > Apps when needed.
 
 The installed version stores cookies, bookmarks, website storage, cache, and window settings in `%APPDATA%\Mini Browser`, separately from the program files, so reinstalling or updating does not overwrite your profile. Uninstalling retains that profile. The installed version starts with a new profile and does not import data from an extracted portable copy.
 
