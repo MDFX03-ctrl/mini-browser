@@ -199,18 +199,27 @@ async function createWindow(id, origin, point, empty = false) {
   publishAll();
   return controller;
 }
+// Closing the source panel refocuses its page, which on Windows reactivates the source window.
+function bringToFront(target) {
+  if (hidden || target.window.isDestroyed()) return;
+  if (target.window.isMinimized()) target.window.restore();
+  target.window.show(); target.window.moveTop(); target.window.focus();
+}
 async function profileCommand(source, command, id, name) {
   if (source.busy()) throw new Error('Please wait for the current change to finish.');
   profilesBusy = true;
   try {
     if (command === 'switch') {
       profiles.get(id);
-      if (!openProfiles().includes(id)) await (await createWindow(id, source)).ready;
+      const target = [...windows.values()].find((item) => item.profileId === id) || await createWindow(id, source);
+      await target.ready;
       source.panel(false);
+      bringToFront(target);
     } else if (command === 'create') {
-      const profile = profiles.create(name);
-      await (await createWindow(profile.id, source)).ready;
+      const target = await createWindow(profiles.create(name).id, source);
+      await target.ready;
       source.panel(false);
+      bringToFront(target);
     } else if (command === 'rename') profiles.rename(id, name);
     else if (command === 'picture') profiles.picture(id, name);
     else if (command === 'reorder') profiles.reorder(id);
@@ -285,7 +294,7 @@ async function finishDrag(source, token, cancel) {
     source.tabs.transfer(drag.id, target.tabs, index);
     if (source !== target && source.tabs.items.length === 0) source.window.close();
     await target.ready;
-    if (!target.window.isDestroyed() && !hidden) { target.window.show(); target.window.focus(); }
+    bringToFront(target);
     return { ok: true };
   } finally { profilesBusy = false; publishAll(); }
 }
