@@ -4,7 +4,7 @@ A small Windows browser that stays out of your way. Resize it from any edge, mov
 
 ## Open the browser
 
-For a normal Windows installation, run **[Mini-Browser-Setup-1.8.1-x64.exe](dist/Mini-Browser-Setup-1.8.1-x64.exe)**. The setup wizard lets you choose a folder and creates desktop and Start menu shortcuts. Install it for your Windows account; administrator access is not required. Run the new installer to update an existing installation. Remove it through Windows Settings > Apps when needed.
+For a normal Windows installation, run **[Mini-Browser-Setup-1.8.2-x64.exe](dist/Mini-Browser-Setup-1.8.2-x64.exe)**. The setup wizard lets you choose a folder and creates desktop and Start menu shortcuts. Install it for your Windows account; administrator access is not required. Run the new installer to update an existing installation. Remove it through Windows Settings > Apps when needed.
 
 The installed version stores cookies, bookmarks, website storage, cache, and window settings in `%APPDATA%\Mini Browser`, separately from the program files, so reinstalling or updating does not overwrite your profile. Uninstalling retains that profile. The installed version starts with a new profile and does not import data from an extracted portable copy.
 
@@ -69,7 +69,7 @@ To add a profile picture, open the profile picker and click that profile's initi
 
 ## Updates and signing
 
-The installed edition checks the GitHub Releases of the repository named in `package.json` (`release.githubOwner`/`release.githubRepo`) 15 seconds after start and every 4 hours. It downloads a newer version quietly and installs it when you quit; the three-dot menu and the tray menu then offer **Restart to update**. It accepts an update only when Windows reports a valid signature from `release.publisherName`, so a release that is unsigned or signed by anyone else is refused even if it appears on the release page. The portable edition and test mode never update themselves.
+The installed edition checks the GitHub Releases of the repository named in `package.json` (`release.githubOwner`/`release.githubRepo`) 15 seconds after start and every 4 hours; a failed check or download is retried after 2, 5, 15, 30 and then every 60 minutes. It downloads a newer version quietly and installs it when you quit; the three-dot menu and the tray menu then offer **Restart to update**. It accepts an update only when Windows reports a valid signature from `release.publisherName`, so a release that is unsigned or signed by anyone else is refused even if it appears on the release page. The portable edition and test mode never update themselves.
 
 This repository contains no signing certificate. Because updates are configured, `npm run build:installer` refuses to build an installer until you supply one; see [SIGNING.md](SIGNING.md). `npm run build` and `npm test` need no certificate.
 

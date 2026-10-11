@@ -1,13 +1,13 @@
 {
   "name": "mini-browser",
   "productName": "Mini Browser",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A small, resizable floating browser for Windows.",
   "private": true,
   "main": "src/main.cjs",
   "scripts": {
     "start": "node scripts/start.cjs",
-    "test": "node --test test/navigation.test.cjs test/bookmarks.test.cjs test/bookmark-icons.test.cjs test/profiles.test.cjs test/permissions.test.cjs test/profile-data.test.cjs test/downloads.test.cjs test/release-config.test.cjs test/icon-decoder.test.cjs",
+    "test": "node --test test/navigation.test.cjs test/bookmarks.test.cjs test/bookmark-icons.test.cjs test/profiles.test.cjs test/permissions.test.cjs test/profile-data.test.cjs test/downloads.test.cjs test/release-config.test.cjs test/updates.test.cjs test/icon-decoder.test.cjs",
     "test:app": "node test/app.test.cjs",
     "test:profiles": "node test/profiles-app.test.cjs",
     "test:tabs": "node test/tabs-app.test.cjs",
