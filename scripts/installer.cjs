@@ -78,6 +78,7 @@ async function buildInstaller() {
   fs.mkdirSync(resources, { recursive: true });
   const { createPackage } = await import('@electron/asar');
   await createPackage(source, path.join(resources, 'app.asar'));
+  await require('./fuses.cjs')(path.join(stage, 'Mini Browser.exe'));
   fs.writeFileSync(path.join(resources, 'installed.flag'), 'Mini Browser installer edition\n');
   if (process.argv.includes('--stage-only')) {
     console.log(`Staged application: ${path.join(stage, 'Mini Browser.exe')}`);

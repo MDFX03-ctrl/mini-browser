@@ -44,6 +44,18 @@ async function run() {
   await new Promise(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${server.address().port}`;
   try {
     await launch();
+    const decoder = await application.evaluate(async ({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(win => win.webContents.getURL() === 'mini://icon-decoder/');
+      const preferences = window.webContents.getLastWebPreferences();
+      return { visible:window.isVisible(), children:window.contentView.children.length, preload:preferences.preload,
+        node:preferences.nodeIntegration, sandbox:preferences.sandbox, isolation:preferences.contextIsolation,
+        bridge:await window.webContents.executeJavaScript('typeof window.miniBrowser'),
+        csp:await window.webContents.executeJavaScript('document.querySelector("meta[http-equiv]").content') };
+    });
+    assert.equal(decoder.visible,false);assert.equal(decoder.children,0);assert.equal(decoder.preload,undefined);
+    assert.equal(decoder.node,false);assert.equal(decoder.sandbox,true);assert.equal(decoder.isolation,true);
+    assert.equal(decoder.bridge,'undefined');assert.match(decoder.csp,/script-src 'none'/);
+    console.log('PASS: hidden decoder has no preload, application bridge or child views and retains script-src none');
     if(process.env.MINI_BROWSER_LIVE_ICONS==='1') {
       await application.evaluate(async({session})=>{const proxy=process.env.HTTPS_PROXY||process.env.HTTP_PROXY;if(proxy)await session.fromPartition('test-pages').setProxy({proxyRules:new URL(proxy).host});});
       const url='https://platform.deepseek.com/';await shell.evaluate(url=>window.miniBrowser.addBookmark(url,'DeepSeek Platform'),url);

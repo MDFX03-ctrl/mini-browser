@@ -280,12 +280,13 @@ class BrowserTabs {
     }
     listen('content-bounds-updated', (event) => event.preventDefault());
     listen('will-attach-webview', (event) => event.preventDefault());
-    listen('did-start-navigation', (event, url, _inPlace, mainFrame) => {
-      if (!mainFrame || !isWebUrl(url)) return;
-      if (!_inPlace) { tab.favicons = []; tab.icon = ''; tab.iconAddresses = [url]; tab.passwordPrompt = null; }
+    listen('did-start-navigation', (event) => {
+      const { url, isSameDocument, isMainFrame, initiator } = event;
+      if (!isMainFrame || !isWebUrl(url)) return;
+      if (!isSameDocument) { tab.favicons = []; tab.icon = ''; tab.iconAddresses = [url]; tab.passwordPrompt = null; }
       if (tab.owner.active === tab) tab.owner.beforeSwitch(true);
       tab.lastAddress = url;
-      if (event?.isRendererInitiated !== true && !event?.initiator) tab.url = url;
+      if (!initiator) tab.url = url;
       Object.assign(tab, { mode: 'page', error: '', notice: '' });
       tab.owner.changed();
     });

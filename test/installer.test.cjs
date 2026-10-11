@@ -7,7 +7,9 @@ const { execFileSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const version = require('../package.json').version;
-const installer = path.resolve(process.argv[2] || path.join(root, 'dist', `Mini-Browser-Setup-${version}-x64.exe`));
+const stage = path.join(root, '.cache', 'installer-app');
+const installer = path.resolve(process.argv[2] || (fs.existsSync(stage) ? stage : path.join(root, 'dist', `Mini-Browser-Setup-${version}-x64.exe`)));
+const staged = fs.statSync(installer).isDirectory();
 const destination = path.join(root, '.cache', 'installer-check');
 let application = path.join(destination, 'application');
 const unpackedInstaller = path.join(destination, 'setup');
@@ -22,32 +24,35 @@ function files(directory) {
 async function verify() {
   const relative = path.relative(root, fs.realpathSync(installer));
   assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), 'Installer must be inside the workspace');
-  assert.ok(fs.statSync(installer).size > 1000000, 'Installer includes its offline payload');
-  const header = Buffer.alloc(2);
-  const descriptor = fs.openSync(installer, 'r');
-  try { fs.readSync(descriptor, header, 0, 2, 0); } finally { fs.closeSync(descriptor); }
-  assert.equal(header.toString(), 'MZ', 'Setup is a Windows executable');
+  if (staged) application = installer;
+  else {
+    assert.ok(fs.statSync(installer).size > 1000000, 'Installer includes its offline payload');
+    const header = Buffer.alloc(2);
+    const descriptor = fs.openSync(installer, 'r');
+    try { fs.readSync(descriptor, header, 0, 2, 0); } finally { fs.closeSync(descriptor); }
+    assert.equal(header.toString(), 'MZ', 'Setup is a Windows executable');
 
-  const sevenZip = files(path.join(root, '.cache', 'electron-builder')).find((file) => path.basename(file) === '7za.exe');
-  assert.ok(sevenZip, 'Project-local 7-Zip tool is available');
-  const run = (args) => execFileSync(sevenZip, args, { cwd: root, windowsHide: true, encoding: 'utf8' });
-  run(['t', installer]);
-  if (fs.existsSync(destination)) {
-    const resolved = fs.realpathSync(destination);
-    const relativeDestination = path.relative(fs.realpathSync(root), resolved);
-    assert.ok(relativeDestination.startsWith(`.cache${path.sep}`) && !path.isAbsolute(relativeDestination));
-    fs.rmSync(resolved, { recursive: true, force: true });
-  }
-  fs.mkdirSync(unpackedInstaller, { recursive: true });
-  run(['x', installer, `-o${unpackedInstaller}`, '-y']);
-  const payload = files(unpackedInstaller).find((file) => path.basename(file) === 'app-64.7z');
-  if (payload) {
-    run(['t', payload]);
-    fs.mkdirSync(application, { recursive: true });
-    run(['x', payload, `-o${application}`, '-y']);
-  } else {
-    // 7-Zip can expose the embedded application archive directly for NSIS builds.
-    application = unpackedInstaller;
+    const sevenZip = files(path.join(root, '.cache', 'electron-builder')).find((file) => path.basename(file) === '7za.exe');
+    assert.ok(sevenZip, 'Project-local 7-Zip tool is available');
+    const run = (args) => execFileSync(sevenZip, args, { cwd: root, windowsHide: true, encoding: 'utf8' });
+    run(['t', installer]);
+    if (fs.existsSync(destination)) {
+      const resolved = fs.realpathSync(destination);
+      const relativeDestination = path.relative(fs.realpathSync(root), resolved);
+      assert.ok(relativeDestination.startsWith(`.cache${path.sep}`) && !path.isAbsolute(relativeDestination));
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+    fs.mkdirSync(unpackedInstaller, { recursive: true });
+    run(['x', installer, `-o${unpackedInstaller}`, '-y']);
+    const payload = files(unpackedInstaller).find((file) => path.basename(file) === 'app-64.7z');
+    if (payload) {
+      run(['t', payload]);
+      fs.mkdirSync(application, { recursive: true });
+      run(['x', payload, `-o${application}`, '-y']);
+    } else {
+      // 7-Zip can expose the embedded application archive directly for NSIS builds.
+      application = unpackedInstaller;
+    }
   }
   assert.ok(fs.existsSync(path.join(application, 'Mini Browser.exe')));
   const executableHeader = Buffer.alloc(4096);
@@ -67,7 +72,12 @@ async function verify() {
     assert.deepEqual(extractFile(archive, file), fs.readFileSync(path.join(root, file)));
   }
   assert.equal(JSON.parse(extractFile(archive, 'package.json').toString()).version, version);
-  console.log('PASS: Windows setup executable, archive integrity, x64 payload, current source code, and absence of browsing data');
+  const { getCurrentFuseWire, FuseV1Options } = require('@electron/fuses');
+  const { FuseState } = require('@electron/fuses/dist/constants');
+  const wire = await getCurrentFuseWire(path.join(application, 'Mini Browser.exe'));
+  for (const option of [FuseV1Options.RunAsNode, FuseV1Options.EnableNodeOptionsEnvironmentVariable, FuseV1Options.EnableNodeCliInspectArguments, FuseV1Options.EnableEmbeddedAsarIntegrityValidation]) assert.equal(wire[option], FuseState.DISABLE);
+  assert.equal(wire[FuseV1Options.OnlyLoadAppFromAsar], FuseState.ENABLE);
+  console.log('PASS: ' + (staged ? 'staged application' : 'Windows setup archive') + ', x64 payload, 22 current source files, metadata, no browsing data and five fuse settings');
   console.log(`Extracted application for runtime tests: ${path.join(application, 'Mini Browser.exe')}`);
 }
 verify().catch((error) => { console.error(error); process.exitCode = 1; });

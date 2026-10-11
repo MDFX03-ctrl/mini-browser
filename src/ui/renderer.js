@@ -25,6 +25,7 @@ let pictureProfileId = null;
 let bookmarkEditSignature = '';
 
 function renderBasics(state) {
+  $('fullscreen-notice').hidden = !IS_OVERLAY || !state.fullscreenNotice || !!state.overlay;
   $('find-bar').hidden = !state.find.open || state.overlay !== 'find';
   if (document.activeElement !== $('find-text')) $('find-text').value = state.find.text;
   $('find-count').textContent = state.find.text ? `${state.find.ordinal} / ${state.find.matches}` : '';

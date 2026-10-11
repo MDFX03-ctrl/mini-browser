@@ -29,6 +29,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
   let videoTabId = null;
   let videoEntering = false;
   let videoControlsShown = false;
+  let fullscreenNotice = false, fullscreenNoticeTimer;
   let chromeRevealed = false;
   let chromeHeld = false;
   let edgeTimer;
@@ -48,14 +49,15 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     const top = controlsVisible() ? chromeHeight() + (pushOpen() ? panelHeight : 0) : 0;
     tabs.layout({ width, height, top, hidden: false });
     if (overlayView) {
+      const noticeOnly = fullscreenNotice && !overlay;
       const w = Math.min(width - 16, overlay === 'suggestions' ? suggestionAnchor?.width || 360 : ['menu', 'profiles'].includes(overlay) ? 280 : overlay === 'bookmark-menu' ? 160 : 360);
       const anchor = overlay === 'suggestions' ? suggestionAnchor : overlay === 'bookmark-menu' ? bookmarkAnchor : null;
-      const x = anchor ? Math.max(8, Math.min(anchor.x || 8, width - w - 8)) : width - w - 8;
-      const y = anchor ? Math.max(chromeHeight(), Math.min(anchor.y || top, height - 80)) : top;
-      const bounds = { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.max(40, Math.min(overlayHeight, height - y - 8)) };
+      const x = noticeOnly ? (width - w) / 2 : anchor ? Math.max(8, Math.min(anchor.x || 8, width - w - 8)) : width - w - 8;
+      const y = noticeOnly ? 12 : anchor ? Math.max(chromeHeight(), Math.min(anchor.y || top, height - 80)) : top;
+      const bounds = { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: noticeOnly ? 52 : Math.max(40, Math.min(overlayHeight, height - y - 8)) };
       const previous = overlayView.getBounds();
       if (Object.keys(bounds).some(key => previous[key] !== bounds[key])) overlayView.setBounds(bounds);
-      const visible = !!overlay && controlsVisible();
+      const visible = noticeOnly || (!!overlay && controlsVisible());
       if (overlayView.getVisible() !== visible) overlayView.setVisible(visible);
       // Audio, favicon and history updates must not repeatedly reorder native
       // views while a website is handling pointer input or keeping a dialog open.
@@ -81,7 +83,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       canBookmark: tab.mode === 'page' && !tab.loading && isWebUrl(content.getURL()),
       bookmarked: items.some((item) => item.url === tab.url),
       profiles: profiles.list(), activeProfile: profiles.get(profileId), openProfiles: openProfiles(),
-      tabs: tabs.list(), activeTabId: tabs.activeId, hideUI, videoFullscreen: videoTabId !== null,
+      tabs: tabs.list(), activeTabId: tabs.activeId, hideUI, videoFullscreen: videoTabId !== null, fullscreenNotice,
       fullscreen: screenFullscreen, maximized: window.isMaximized(),
       autoHide: uiAutoHide(), chromeVisible: controlsVisible(), profilePanelOpen: overlay === 'profiles', sitePanelOpen,
       find: { ...tab.find }, zoomPercent: Math.round(content.getZoomFactor() * 100), zoomNotice,
@@ -141,6 +143,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     const previous = tabs?.items.find((tab) => tab.id === videoTabId);
     videoTabId = null;
     videoEntering = false;
+    fullscreenNotice = false; clearTimeout(fullscreenNoticeTimer);
     if (previous && !previous.view.webContents.isDestroyed()) {
       previous.view.webContents.executeJavaScript('if (document.fullscreenElement) document.exitFullscreen();', true).catch(() => {});
     }
@@ -170,6 +173,11 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
           if (videoTabId !== tab.id) return;
           videoEntering = false;
           if (!entered) videoTabId = null;
+          if (entered) {
+            fullscreenNotice = true; clearTimeout(fullscreenNoticeTimer);
+            fullscreenNoticeTimer = setTimeout(() => { fullscreenNotice = false; publish(); }, 3000);
+            fullscreenNoticeTimer.unref?.();
+          }
           syncChrome();
         }).catch(() => { if (videoTabId === tab.id) { videoEntering = false; videoTabId = null; syncChrome(); } });
       });
@@ -178,6 +186,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
       if (videoTabId !== tab.id) return;
       videoTabId = null;
       videoEntering = false;
+      fullscreenNotice = false; clearTimeout(fullscreenNoticeTimer);
       chromeRevealed = false;
     }
     syncChrome();
@@ -526,6 +535,7 @@ async function createBrowserWindow({ profileId, bookmarks, profiles, browsingSes
     }
   });
   window.on('closed', () => {
+    clearTimeout(fullscreenNoticeTimer);
     clearTimeout(zoomTimer);
     clearInterval(edgeTimer);
     tabs.destroy().catch(() => {});

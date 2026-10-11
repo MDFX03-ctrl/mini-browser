@@ -87,6 +87,7 @@ main { height:calc(100vh - var(--chrome-height));overflow:auto; } .welcome { min
 #overlays { display:none; } :root.overlay-page,:root.overlay-page body { background:transparent; }
 .overlay-page #chrome,.overlay-page main { display:none!important; } .overlay-page #overlays { display:block;padding:3px;max-height:100vh;overflow:auto; }
 .overlay-page .notice { position:fixed; } .surface { background:#fcfdf9;border:1px solid #dce5d4;border-radius:10px;box-shadow:0 3px 10px #203c3226;overflow:hidden; }
+#fullscreen-notice { position:fixed;inset:3px 3px auto;background:#29463a;color:white;border-radius:6px;padding:12px;font-size:13px;text-align:center;pointer-events:none; }
 .app-menu { padding:6px 0; } .app-menu>button { display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:8px 16px;text-align:left;font-size:14px; }
 .app-menu>button:hover { background:#edf2e7; } .app-menu small { margin-left:auto;font-size:11px;color:#758573; }
 .menu-divider { height:1px;background:#e5ecdf;margin:5px 0; } .menu-check { display:flex;align-items:center;gap:8px;padding:8px 16px; }

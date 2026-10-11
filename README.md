@@ -96,6 +96,7 @@ $env:TEMP = "$PWD\.cache\tmp"
 $env:TMP = $env:TEMP
 New-Item -ItemType Directory -Force $env:TEMP | Out-Null
 npm ci
+npm run build:installer -- --stage-only
 npm start
 ```
 
@@ -117,6 +118,8 @@ npm run test:everyday # Chrome-style shell, suggestions, history, encrypted save
 ```
 
 The installer build can reuse the Electron runtime from an extracted portable copy in `dist/Mini-Browser-Windows-x64/Mini Browser-win32-x64`, or from a project-local folder supplied as an argument. Otherwise it downloads the pinned Electron runtime. It always rebuilds application code from `src` and excludes existing browsing data.
+
+Runtime tests use an unfused portable copy under `.cache/test-app`, with the staged ASAR and project-local profile data. The driver refuses an executable with `installed.flag`. Release executables disable Node mode, NODE_OPTIONS and CLI inspectors, and load application code only from ASAR. The portable Packager build embeds ASAR integrity in the Windows executable and enables its validation. Installer staging leaves that validation off because its manual ASAR build does not embed the required executable integrity resource. `npm run test:installer` checks the staged application when present; an explicit setup executable argument checks its archive without running setup.
 
 The persistent-profile test runs a disposable portable copy inside this project, without reading the installed app or its data. It tests different logins on the same site, all supported storage types, HTTP cache isolation, independent windows, live tab transfer, saved ordering, restart persistence, deletion, global bounds, and browser restrictions. Its main-process inspector driver avoids pausing service workers through a browser debugger.
 

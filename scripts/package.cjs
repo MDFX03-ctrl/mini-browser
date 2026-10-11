@@ -29,6 +29,7 @@ async function build() {
     ignore: [/^\/(?:\.cache|\.mini-browser|\.git|dist|test|test-results|scripts)(?:\/|$)/, /^\/(?:\.npmrc.*|\.gitignore|README\.md)$/]
   });
   for (const output of outputs) {
+    await require('./fuses.cjs')(path.join(output, 'Mini Browser.exe'), true);
     fs.copyFileSync(path.join(__dirname, 'portable-readme.txt'), path.join(output, 'README.txt'));
   }
   const { ZipFile } = require('yazl');

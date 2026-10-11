@@ -17,6 +17,8 @@ delete env.ELECTRON_RUN_AS_NODE;
 let application;
 let shell;
 let originalPointer;
+let slowRequests = 0;
+const slowServer = http.createServer(() => { slowRequests++; });
 const server = http.createServer((request, response) => {
   if (request.url === '/slow') {
     response.setHeader('Content-Type', 'text/html');
@@ -140,7 +142,33 @@ async function key(keyCode, modifiers = [], shellTarget = false) {
 }
 async function navigate(url) {
   assert.equal((await call('navigate', url)).ok, true);
+  await poll(() => application.evaluate(({ BrowserWindow }, { id, url }) => {
+    const views = BrowserWindow.fromId(id).contentView.children.filter(view => !view.browserChrome);
+    return views.some(view => view.getVisible() && view.webContents.getURL() === url && !view.webContents.isLoading());
+  }, { id:shell.id, url }), 'native navigation completes');
   await poll(async () => { const s = await state(); return s.url === url && s.mode === 'page' && !s.loading; }, 'page load');
+}
+async function navigationAddressChecks(base) {
+  const slow = `http://127.0.0.1:${slowServer.address().port}/never`;
+  await application.evaluate(({ BrowserWindow }, id) => {
+    global.navigationTrace = [];
+    BrowserWindow.fromId(id).contentView.children.find(view => !view.browserChrome).webContents.on('did-start-navigation', details => {
+      if (details.isMainFrame) global.navigationTrace.push({ url:details.url, initiator:!!details.initiator });
+    });
+  }, shell.id);
+  await remote(`location.href=${JSON.stringify(slow)};void 0`);
+  await poll(async () => slowRequests === 1 && (await state()).loading, 'page starts slow cross-origin navigation');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await state()).url, base + '/a');
+  assert.equal(await shell.evaluate(() => document.getElementById('address').value), base + '/a');
+  assert.deepEqual(await application.evaluate(() => global.navigationTrace.at(-1)), { url:slow, initiator:true });
+  await key('Escape'); await poll(async () => !(await state()).loading, 'page navigation stops'); await navigate(base + '/a');
+  await call('navigate', slow);
+  await poll(async () => slowRequests === 2 && (await state()).url === slow && (await state()).loading, 'typed address shows pending URL');
+  assert.equal(await shell.evaluate(() => document.getElementById('address').value), slow);
+  assert.deepEqual(await application.evaluate(() => global.navigationTrace.at(-1)), { url:slow, initiator:false });
+  await key('Escape'); await poll(async () => !(await state()).loading, 'browser navigation stops'); await navigate(base + '/a');
+  console.log('PASS: renderer navigation to a never-responding second origin keeps the committed address; browser navigation shows its pending address');
 }
 function movePointer(point) {
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'move-pointer.ps1'), String(point.x), String(point.y)],
@@ -193,9 +221,28 @@ async function startVideo() {
   }
   assert.equal(await remote("document.fullscreenElement?.id"), 'video');
   await assertWebsiteFillsWindow();
+  const started = Date.now();
+  await poll(() => shell.overlay().evaluate(() => {
+    const notice = document.getElementById('fullscreen-notice');
+    return !notice.hidden && getComputedStyle(notice).display !== 'none' && notice.getBoundingClientRect().height > 0;
+  }), 'fullscreen notice visible in overlay');
+  const placement = await application.evaluate(({ BrowserWindow }, id) => {
+    const window = BrowserWindow.fromId(id), overlay = window.contentView.children.find(view => view.browserChrome);
+    const [width] = window.getContentSize(), bounds = overlay.getBounds();
+    return { visible:overlay.getVisible(), y:bounds.y, centered:Math.abs(bounds.x + bounds.width / 2 - width / 2) <= 1,
+      focused:overlay.webContents.isFocused(),
+      above:window.contentView.children.at(-1) === overlay };
+  }, shell.id);
+  assert.equal(placement.visible,true);assert.equal(placement.centered,true);assert.equal(placement.y,12);assert.equal(placement.above,true);
+  assert.equal(placement.focused,false);
+  assert.equal(await shell.overlay().evaluate(() => document.getElementById('fullscreen-notice').textContent), 'Press Esc to exit full screen.');
+  await poll(() => application.evaluate(({ BrowserWindow }, id) => !BrowserWindow.fromId(id).contentView.children.find(view => view.browserChrome).getVisible(), shell.id), 'notice disappears without intercepting page clicks', 5000);
+  assert.ok(Date.now() - started >= 2000 && Date.now() - started < 4500, 'notice lasts about three seconds');
+  assert.equal(await shell.overlay().evaluate(() => document.getElementById('fullscreen-notice').hidden),true);
 }
 async function run() {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise(resolve => slowServer.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     application = await electron.launch({ executablePath, cwd: root, env });
@@ -210,6 +257,7 @@ async function run() {
     originalPointer = await application.evaluate(({ screen }) => screen.getCursorScreenPoint());
     const first = (await state()).activeTabId;
     await navigate(`${base}/a`);
+    await navigationAddressChecks(base);
     await popupChecks(base);
     await remote("document.cookie='shared=default;path=/'; localStorage.setItem('shared','default'); sessionStorage.setItem('owner','A'); document.getElementById('note').value='Keep A';");
     await shell.locator('#new-tab').click();
@@ -354,7 +402,7 @@ async function run() {
     await call('newTab');
     await poll(async () => !(await state()).videoFullscreen && !(await windowDetails()).fullscreen, 'tab change leaves video fullscreen');
     assert.equal((await state()).mode, 'welcome');
-    console.log('PASS: video fills and resizes with the small floating window; HTML fullscreen never enlarges it, and exit restores the previous UI mode');
+    console.log('PASS: video fills and resizes with the small floating window; centered overlay notice lasts three seconds and hides its native view; exit restores the previous UI mode');
 
     await navigate(`${base}/a`);
     await remote(`new Promise((resolve) => {
@@ -430,6 +478,7 @@ async function run() {
   } finally {
     if (application) await application.close().catch(() => {});
     await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); });
+    await new Promise(resolve => { slowServer.close(resolve); slowServer.closeAllConnections(); });
     if (originalPointer && process.env.MINI_BROWSER_POINTER_SMOKE === '1') {
       try { movePointer(originalPointer); } catch { /* Do not hide a test failure if pointer restoration is unavailable. */ }
     }

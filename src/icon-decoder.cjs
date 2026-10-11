@@ -35,7 +35,7 @@ function iconSource(buffer, contentType = '', address = '') {
   return `data:${type};base64,${buffer.toString('base64')}`;
 }
 
-// Serialized into the existing trusted shell, never into a website. SVG is
+// Serialized into the hidden decoder page, never into a website. SVG is
 // loaded only as an image: it is never inserted as markup or a document.
 // Chromium's image context disables SVG scripts and external resources.
 function rasterizeIcon(source) {
