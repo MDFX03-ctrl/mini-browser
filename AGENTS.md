@@ -9,9 +9,9 @@ Installed copies (1.8.0 and later) update themselves from the GitHub Releases of
 3. Run `npm test`, then the app suites that touch the change, at least `npm run test:profiles` and `npm run test:windows`. Before an engine update, run every `test:*` suite.
 4. Commit on `main`. Commits must use the private address `306214390+MDFX03-ctrl@users.noreply.github.com` (already set in this repository's git config). Never commit a thumbprint, certificate or `.pfx`.
 
-## 2. Build (the owner runs this)
+## 2. Build
 
-Signing reads the owner's Windows certificate store, so the owner runs the build in a terminal:
+Signing reads the owner's Windows certificate store. Claude may run the build under the owner's CLAUDE.md permission; other agents ask the owner to run it. Run only one build at a time: two builds share `.cache/installer-app` and break each other.
 
 ```powershell
 npm run build:installer
