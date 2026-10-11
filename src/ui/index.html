@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mini Browser</title><link rel="stylesheet" href="styles.css"><script defer src="renderer.js"></script></head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<symbol id="arrow-left" viewBox="0 0 24 24"><path d="m11 5-7 7 7 7M4 12h16"/></symbol>
+<symbol id="arrow-right" viewBox="0 0 24 24"><path d="m13 5 7 7-7 7M4 12h16"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24"><path d="M19.5 10a7.7 7.7 0 1 0-1.6 7.1M19.5 4v6h-6"/></symbol>
+<symbol id="stop" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c-5 5-5 12 0 17 5-5 5-12 0-17Z"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.8 6.3.8-4.6 4.3 1.2 6.1-5.6-3-5.6 3 1.2-6.1L3 9.6l6.3-.8Z"/></symbol>
+<symbol id="window-icon" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9h16M8 6.5h2"/></symbol>
+<symbol id="pin-icon" viewBox="0 0 24 24"><path d="M8 4h8l-1 6 3 4H6l3-4-1-6ZM12 14v7"/></symbol>
+<symbol id="download-icon" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></symbol>
+<symbol id="menu-icon" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+<symbol id="search-icon" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+<symbol id="key-icon" viewBox="0 0 24 24"><circle cx="8" cy="10" r="4"/><path d="M12 10h9m-3 0v4m-3-4v3"/></symbol>
+<symbol id="warning" viewBox="0 0 24 24"><path d="m12 3 10 18H2ZM12 9v5m0 3v.2"/></symbol>
+<symbol id="home-icon" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8M6 9v12h4v-7h4v7h4V9"/></symbol>
+</svg>
+<div id="chrome">
+ <div class="tab-strip">
+  <span id="window-title" class="visually-hidden">Mini Browser</span>
+  <div id="tabs" class="tabs" role="tablist" aria-label="Open tabs"></div>
+  <button id="new-tab" class="icon-button" title="New tab (Ctrl+T)" aria-label="New tab">+</button>
+  <div class="top-actions"><button id="pin" class="icon-button" aria-pressed="false" aria-label="Keep on top" title="Keep on top (Ctrl+Shift+P)"><svg><use href="#pin-icon"/></svg></button><button id="hide-ui" class="icon-button" aria-pressed="false" aria-label="Auto-hide browser controls" title="Auto-hide controls (Ctrl+Shift+H)"><svg><use href="#window-icon"/></svg></button></div>
+  <div class="caption"><button id="minimize" class="window-button" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button><button id="maximize" class="window-button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg></button><button id="close-window" class="window-button window-close" aria-label="Close Mini Browser window" title="Close window"><svg><use href="#stop"/></svg></button></div>
+ </div>
+ <header class="toolbar" aria-label="Browser controls">
+  <div class="navigation"><button id="back" class="icon-button" title="Back (Alt+Left)" aria-label="Back" disabled><svg><use href="#arrow-left"/></svg></button><button id="forward" class="icon-button" title="Forward (Alt+Right)" aria-label="Forward" disabled><svg><use href="#arrow-right"/></svg></button><button id="reload" class="icon-button" title="Reload (Ctrl+R)" aria-label="Reload" disabled><svg><use id="reload-icon" href="#refresh"/></svg></button></div>
+  <form id="address-form" class="address-wrap" aria-label="Website navigation"><button id="site-permissions" type="button" class="icon-button" title="Site permissions" aria-label="Site permissions" disabled><img id="site-favicon" width="16" height="16" alt="" hidden><svg class="address-icon"><use href="#globe"/></svg></button><input id="address" placeholder="Enter address or search history" aria-label="Website address" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="8192" role="combobox" aria-autocomplete="list" aria-expanded="false"><button id="password-fill-toggle" type="button" class="icon-button" title="Fill a saved login" aria-label="Fill a saved login" hidden><svg><use href="#key-icon"/></svg></button><button id="bookmark" type="button" class="icon-button bookmark-toggle" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page" aria-pressed="false" disabled><svg><use href="#star"/></svg></button></form>
+  <button id="downloads-toggle" class="icon-button" title="Downloads" aria-label="Downloads" aria-expanded="false" hidden><svg><use href="#download-icon"/></svg></button><button id="profile-toggle" class="profile-toggle" aria-expanded="false" aria-controls="profile-panel" title="Browser profiles">D</button><button id="menu-toggle" class="icon-button" title="Menu" aria-label="Browser menu" aria-expanded="false"><svg><use href="#menu-icon"/></svg></button>
+  <div id="loading" class="loading" hidden></div><span id="zoom-notice" class="zoom-notice" role="status" hidden></span>
+ </header>
+ <nav id="bookmark-bar" class="bookmark-bar" aria-label="Bookmark bar" hidden></nav>
+ <div id="browser-panels"><section id="access-panel" class="access-panel" aria-label="Site permissions" hidden></section>
+   <section id="profile-panel" class="profile-panel" aria-label="Browser profiles" hidden>
+    <div class="profiles-heading"><strong>Profiles</strong><button id="profile-new" class="text-button">+ New</button><button id="profile-close" class="icon-button" aria-label="Close profiles">×</button></div>
+    <div id="profile-list" class="profile-list" aria-label="All profiles"></div>
+    <input id="profile-picture-file" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose profile picture" hidden>
+    <form id="profile-form" hidden>
+      <label id="profile-name-label" for="profile-name">Profile name</label>
+      <input id="profile-name" maxlength="40" required autocomplete="off">
+      <div class="profile-actions"><button type="submit" class="primary-button">Save</button><button id="profile-cancel" type="button" class="text-button">Cancel</button></div>
+    </form>
+    <div id="profile-confirm" hidden>
+      <p id="profile-delete-message"></p>
+      <div class="profile-actions"><button id="profile-delete-confirm" class="primary-button">Delete profile</button><button id="profile-delete-cancel" class="text-button">Cancel</button></div>
+    </div>
+    <p id="profile-error" role="alert" hidden></p>
+  </section>
+ </div>
+</div>
+<main>
+ <section id="welcome" class="welcome"><div class="welcome-inner">
+  <form id="start-form" class="start-search" role="search"><svg><use href="#search-icon"/></svg><input id="start-address" aria-label="Search bookmarks and history or enter address" placeholder="Enter address or search history" autocomplete="off" spellcheck="false" maxlength="8192"><button class="icon-button" title="Open address" aria-label="Open address"><svg><use href="#arrow-right"/></svg></button></form>
+  <section class="bookmarks-section" aria-label="Bookmark shortcuts"><p id="bookmarks-empty" hidden></p><div id="bookmarks-list" class="bookmarks-list"></div><button id="add-bookmark" class="shortcut-add" aria-label="Add website"><span>+</span><span>Add shortcut</span></button></section>
+  <form id="bookmark-form" class="bookmark-form" hidden><label for="bookmark-url">Website address</label><input id="bookmark-url" placeholder="https://example.com" required maxlength="8192" autocomplete="off" spellcheck="false"><label for="bookmark-name">Name (optional)</label><input id="bookmark-name" maxlength="120" autocomplete="off"><p id="bookmark-error" role="alert" hidden></p><div class="profile-actions"><button type="submit" class="primary-button">Save bookmark</button><button id="cancel-bookmark" type="button" class="text-button">Cancel</button></div></form>
+ </div></section>
+ <section id="error" class="error-panel" hidden><svg><use href="#warning"/></svg><h1>Couldn’t reach this page</h1><p>Check the address or your connection and try again.</p><p id="error-detail"></p><button id="retry" class="primary-button">Try again</button><button id="error-home" class="text-button">New tab page</button></section>
+</main>
+<div id="overlays">
+ <section id="bookmark-menu" class="surface app-menu" role="menu" aria-label="Bookmark actions" hidden><button id="bookmark-edit-open" role="menuitem">Edit</button></section>
+ <form id="bookmark-edit-form" class="surface bookmark-editor" aria-label="Edit bookmark" hidden>
+  <div class="panel-heading"><strong>Edit bookmark</strong><button type="button" class="icon-button" data-ui="close" aria-label="Close bookmark editor">×</button></div>
+  <label for="bookmark-edit-name">Name</label><input id="bookmark-edit-name" maxlength="120" autocomplete="off">
+  <label for="bookmark-edit-url">Website address</label><input id="bookmark-edit-url" required maxlength="8192" autocomplete="off" spellcheck="false">
+  <p id="bookmark-edit-error" role="alert" hidden></p><div class="profile-actions"><button class="primary-button">Save</button><button type="button" class="text-button" data-ui="close">Cancel</button></div>
+ </form>
+ <section id="app-menu" class="surface app-menu" role="menu" aria-label="Browser menu" hidden>
+  <button data-ui="new" role="menuitem">New tab <small>Ctrl+T</small></button><button data-ui="reopen" role="menuitem">Reopen closed tab <small>Ctrl+Shift+T</small></button>
+  <div class="menu-divider"></div><button data-ui="history" role="menuitem">History <small>Ctrl+H</small></button><button data-ui="downloads" role="menuitem">Downloads</button><button data-ui="bookmarks" role="menuitem">Bookmarks</button><label class="menu-check"><input id="bookmark-bar-toggle" type="checkbox"> Show bookmarks bar</label><button data-ui="passwords" role="menuitem">Passwords</button>
+  <div class="menu-divider"></div><div class="zoom-controls"><span>Zoom</span><button data-zoom="out" aria-label="Zoom out">−</button><span id="menu-zoom">100%</span><button data-zoom="in" aria-label="Zoom in">+</button><button data-zoom="reset">Reset</button></div><button data-ui="find" role="menuitem">Find <small>Ctrl+F</small></button><button data-ui="print" role="menuitem">Print <small>Ctrl+P</small></button><button data-ui="clear" role="menuitem">Clear browsing data</button>
+  <div class="menu-divider"></div><button id="home" role="menuitem">New tab page</button><div class="menu-divider"></div><button data-ui="exit" role="menuitem">Exit</button>
+ </section>
+ <section id="suggestions" class="surface suggestions" role="listbox" aria-label="Address suggestions" hidden></section>
+ <form id="find-bar" class="surface find-bar" role="search" aria-label="Find in page" hidden><input id="find-text" type="search" placeholder="Find in page" aria-label="Find in page" maxlength="1024" autocomplete="off"><span id="find-count" role="status"></span><button id="find-previous" type="button" class="icon-button" title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button><button id="find-next" class="icon-button" title="Next match (Enter)" aria-label="Next match">↓</button><button id="find-close" type="button" class="icon-button" aria-label="Close find">×</button></form>
+ <section id="downloads-panel" class="surface downloads-panel" aria-label="Downloads" hidden><div class="panel-heading"><strong>Downloads</strong><button id="downloads-close" class="icon-button" aria-label="Close downloads">×</button></div><div id="downloads-list"></div></section>
+ <section id="library-panel" class="surface library-panel" hidden><div class="panel-heading"><strong id="library-title"></strong><button class="icon-button" data-ui="close" aria-label="Close panel">×</button></div><div id="library-list"></div></section>
+ <section id="password-prompt" class="surface password-prompt" hidden><div class="panel-heading"><strong>Save password?</strong><button class="icon-button" id="password-dismiss" aria-label="Dismiss save password">×</button></div><p id="password-site"></p><p id="password-user"></p><div class="profile-actions"><button id="password-save" class="primary-button">Save</button><button id="password-not-now" class="text-button">Not now</button></div></section>
+ <form id="clear-data-form" class="surface clear-data-form" hidden><div class="panel-heading"><strong>Clear browsing data</strong><button type="button" class="icon-button" data-ui="close" aria-label="Close clear data">×</button></div><p id="clear-profile"></p><label><input type="checkbox" name="history" checked> Browsing history</label><label><input type="checkbox" name="cache" checked> Cached files</label><label><input type="checkbox" name="cookies"> Cookies (sign out of websites)</label><label><input type="checkbox" name="passwords"> Saved passwords</label><button class="primary-button">Clear selected data</button><p id="clear-error" role="alert" hidden></p></form>
+</div>
+<div id="notice" class="notice" role="status" hidden></div>
+</body></html>

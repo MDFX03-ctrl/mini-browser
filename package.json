@@ -1,0 +1,32 @@
+{
+  "name": "mini-browser",
+  "productName": "Mini Browser",
+  "version": "1.7.4",
+  "description": "A small, resizable floating browser for Windows.",
+  "private": true,
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "node scripts/start.cjs",
+    "test": "node --test test/navigation.test.cjs test/bookmarks.test.cjs test/bookmark-icons.test.cjs test/profiles.test.cjs test/permissions.test.cjs test/profile-data.test.cjs test/icon-decoder.test.cjs",
+    "test:app": "node test/app.test.cjs",
+    "test:profiles": "node test/profiles-app.test.cjs",
+    "test:tabs": "node test/tabs-app.test.cjs",
+    "test:basics": "node test/basics-app.test.cjs",
+    "test:icons": "node test/bookmark-icons-app.test.cjs",
+    "test:installer": "node test/installer.test.cjs",
+    "build": "node scripts/package.cjs",
+    "build:installer": "node scripts/installer.cjs",
+    "test:windows": "node test/windows-ui.test.cjs",
+    "test:permissions": "node test/permissions-app.test.cjs",
+    "test:everyday": "node test/everyday-app.test.cjs",
+    "test:formats": "node test/icon-formats-app.test.cjs",
+    "test:compatibility": "node test/compatibility-app.test.cjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.64.0",
+    "yazl": "3.3.1"
+  }
+}

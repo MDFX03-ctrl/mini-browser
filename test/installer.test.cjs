@@ -1,0 +1,73 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+
+const root = path.resolve(__dirname, '..');
+const version = require('../package.json').version;
+const installer = path.resolve(process.argv[2] || path.join(root, 'dist', `Mini-Browser-Setup-${version}-x64.exe`));
+const destination = path.join(root, '.cache', 'installer-check');
+let application = path.join(destination, 'application');
+const unpackedInstaller = path.join(destination, 'setup');
+
+function files(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = path.join(directory, entry.name);
+    return entry.isDirectory() ? files(absolute) : [absolute];
+  });
+}
+
+async function verify() {
+  const relative = path.relative(root, fs.realpathSync(installer));
+  assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), 'Installer must be inside the workspace');
+  assert.ok(fs.statSync(installer).size > 1000000, 'Installer includes its offline payload');
+  const header = Buffer.alloc(2);
+  const descriptor = fs.openSync(installer, 'r');
+  try { fs.readSync(descriptor, header, 0, 2, 0); } finally { fs.closeSync(descriptor); }
+  assert.equal(header.toString(), 'MZ', 'Setup is a Windows executable');
+
+  const sevenZip = files(path.join(root, '.cache', 'electron-builder')).find((file) => path.basename(file) === '7za.exe');
+  assert.ok(sevenZip, 'Project-local 7-Zip tool is available');
+  const run = (args) => execFileSync(sevenZip, args, { cwd: root, windowsHide: true, encoding: 'utf8' });
+  run(['t', installer]);
+  if (fs.existsSync(destination)) {
+    const resolved = fs.realpathSync(destination);
+    const relativeDestination = path.relative(fs.realpathSync(root), resolved);
+    assert.ok(relativeDestination.startsWith(`.cache${path.sep}`) && !path.isAbsolute(relativeDestination));
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+  fs.mkdirSync(unpackedInstaller, { recursive: true });
+  run(['x', installer, `-o${unpackedInstaller}`, '-y']);
+  const payload = files(unpackedInstaller).find((file) => path.basename(file) === 'app-64.7z');
+  if (payload) {
+    run(['t', payload]);
+    fs.mkdirSync(application, { recursive: true });
+    run(['x', payload, `-o${application}`, '-y']);
+  } else {
+    // 7-Zip can expose the embedded application archive directly for NSIS builds.
+    application = unpackedInstaller;
+  }
+  assert.ok(fs.existsSync(path.join(application, 'Mini Browser.exe')));
+  const executableHeader = Buffer.alloc(4096);
+  const appDescriptor = fs.openSync(path.join(application, 'Mini Browser.exe'), 'r');
+  try { fs.readSync(appDescriptor, executableHeader, 0, 4096, 0); } finally { fs.closeSync(appDescriptor); }
+  const peOffset = executableHeader.readUInt32LE(0x3c);
+  assert.equal(executableHeader.readUInt16LE(peOffset + 4), 0x8664, 'Bundled application is Windows x64');
+  assert.ok(fs.existsSync(path.join(application, 'resources', 'installed.flag')));
+  assert.ok(!fs.existsSync(path.join(application, '.mini-browser')), 'No browsing data in the installer');
+  const { extractFile } = await import('@electron/asar');
+  const archive = path.join(application, 'resources', 'app.asar');
+  for (const relativeFile of [
+    ['src', 'main.cjs'], ['src', 'browser-window.cjs'], ['src', 'ordering.cjs'], ['src', 'tabs.cjs'], ['src', 'navigation.cjs'], ['src', 'bookmarks.cjs'], ['src', 'profiles.cjs'],
+    ['src', 'bookmark-icons.cjs'], ['src', 'icon-decoder.cjs'], ['src', 'page-compatibility.cjs'], ['src', 'permissions.cjs'], ['src', 'downloads.cjs'], ['src', 'page-menu.cjs'], ['src', 'tab-restore.cjs'], ['src', 'profile-data.cjs'], ['src', 'passwords.cjs'], ['src', 'page-preload.cjs'], ['src', 'preload.cjs'], ['src', 'ui', 'renderer.js'], ['src', 'ui', 'index.html'], ['src', 'ui', 'styles.css']
+  ]) {
+    const file = path.join(...relativeFile);
+    assert.deepEqual(extractFile(archive, file), fs.readFileSync(path.join(root, file)));
+  }
+  assert.equal(JSON.parse(extractFile(archive, 'package.json').toString()).version, version);
+  console.log('PASS: Windows setup executable, archive integrity, x64 payload, current source code, and absence of browsing data');
+  console.log(`Extracted application for runtime tests: ${path.join(application, 'Mini Browser.exe')}`);
+}
+verify().catch((error) => { console.error(error); process.exitCode = 1; });
