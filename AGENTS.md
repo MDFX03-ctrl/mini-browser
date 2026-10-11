@@ -53,4 +53,5 @@ Installed copies check 15 seconds after start and every 4 hours, download quietl
 - **`gh` returns 403 or is signed out:** the owner runs `gh auth login --web` and chooses HTTPS and browser login.
 - **"the installer must be signed":** the thumbprint variable is missing in that terminal; see step 2.
 - **"Cannot find drive 'Cert'":** fixed in `scripts/sign.cjs`, which drops the PSModulePath that PowerShell 7 passes to Windows PowerShell. If it reappears, check that fix.
+- **"Signing failed: Unknown error (0x80072f78)":** a timestamp server gave a bad reply. `scripts/sign.cjs` already tries DigiCert, Sectigo and GlobalSign twice each; if all fail, check the internet connection or proxy and run the build again.
 - **Certificate expired:** create a new self-signed code-signing certificate with the same subject `CN=MDFX03 Mini Browser`, trust it as described in SIGNING.md, and update the thumbprint variable. Existing installs keep accepting updates because they check the subject.
